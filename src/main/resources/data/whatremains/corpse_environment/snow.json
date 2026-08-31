@@ -1,0 +1,7 @@
+{
+  "tracker": "frost",
+  "condition": { "max_temperature": 0.15, "require_sky_visible": true },
+  "accumulate_rate": 0.000417,
+  "decay_rate": 0.00083,
+  "style_key": "frosted"
+}

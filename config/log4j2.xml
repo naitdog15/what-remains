@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="warn">
+    <Appenders>
+        <Console name="SysOut" target="SYSTEM_OUT">
+            <PatternLayout>
+                <LoggerNamePatternSelector defaultPattern="[%d{HH:mm:ss}] [%t/%level] [%logger]: %msg%n">
+                    <PatternMatch key="net.minecraft.,com.mojang." pattern="[%d{HH:mm:ss}] [%t/%level] [%logger{1}]: %msg%n"/>
+                </LoggerNamePatternSelector>
+            </PatternLayout>
+        </Console>
+        <RollingRandomAccessFile name="File" fileName="logs/latest.log" filePattern="logs/%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="[%d{ddMMMyyyy HH:mm:ss.SSS}] [%t/%level] [%logger/%marker]: %msg%n"/>
+            <Policies>
+                <OnStartupTriggeringPolicy/>
+                <TimeBasedTriggeringPolicy/>
+            </Policies>
+        </RollingRandomAccessFile>
+    </Appenders>
+    <Loggers>
+        <!-- GeckoLib is very chatty at INFO; suppress to WARN in dev -->
+        <Logger name="software.bernie.geckolib" level="warn" additivity="false">
+            <AppenderRef ref="SysOut"/>
+            <AppenderRef ref="File"/>
+        </Logger>
+        <Root level="debug">
+            <AppenderRef ref="SysOut" level="info"/>
+            <AppenderRef ref="File"/>
+        </Root>
+    </Loggers>
+</Configuration>

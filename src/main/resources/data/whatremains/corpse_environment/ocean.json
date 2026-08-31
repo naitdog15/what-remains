@@ -1,0 +1,8 @@
+{
+  "tracker": "waterlogged",
+  "condition": { "fluid": "water", "biome_tag": "minecraft:is_ocean" },
+  "accumulate_rate": 0.000278,
+  "decay_rate": 0.000556,
+  "style_key": "ocean_bloat",
+  "style_priority": 1
+}

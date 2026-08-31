@@ -1,0 +1,7 @@
+{
+  "tracker": "char",
+  "condition": { "require_on_fire": true },
+  "accumulate_rate": 0.0021,
+  "decay_rate": 0.0,
+  "style_key": "charred"
+}

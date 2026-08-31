@@ -1,0 +1,412 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    // Pinned (was '[6.0,6.2)' in the monorepo): a floating range makes an offline build depend on
+    // whatever happened to be cached, and silently changes reobf/AT behaviour between machines.
+    id 'net.minecraftforge.gradle' version '6.0.54'
+}
+
+dependencies {
+    implementation 'org.eclipse.jdt:org.eclipse.jdt.annotation:2.2.0'
+}
+
+def mod_version = project.hasProperty('mod_version') ? project.mod_version : '1.0.0'
+def mod_group_id = project.hasProperty('mod_group_id') ? project.mod_group_id : 'com.temog.notminelegacy.whatremains'
+def mod_id = project.hasProperty('mod_id') ? project.mod_id : 'whatremains'
+def mapping_channel = project.hasProperty('mapping_channel') ? project.mapping_channel : 'official'
+def mapping_version = project.hasProperty('mapping_version') ? project.mapping_version : '1.20.1'
+def minecraft_version = project.hasProperty('minecraft_version') ? project.minecraft_version : '1.20.1'
+def forge_version = project.hasProperty('forge_version') ? project.forge_version : '47.4.10'
+def minecraft_version_range = project.hasProperty('minecraft_version_range') ? project.minecraft_version_range : '[1.20.1,1.21)'
+def forge_version_range = project.hasProperty('forge_version_range') ? project.forge_version_range : '[47,)'
+def loader_version_range = project.hasProperty('loader_version_range') ? project.loader_version_range : '[47,)'
+def mod_name = project.hasProperty('mod_name') ? project.mod_name : 'Not Mine Legacy: What Remains'
+def mod_license = project.hasProperty('mod_license') ? project.mod_license : 'All Rights Reserved'
+def mod_authors = project.hasProperty('mod_authors') ? project.mod_authors : 'Temog'
+def mod_description = project.hasProperty('mod_description') ? project.mod_description : 'A Minecraft mod.'
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+// Mojang ships Java 17 to end users in 1.18+, so your mod should target Java 17.
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
+
+minecraft {
+    // Channel:   Version:
+    // official   MCVersion             Official field/method names from Mojang mapping files
+    // parchment  YYYY.MM.DD-MCVersion  Community parameter names layered on top of official
+    //
+    // You must be aware of the Mojang license when using the 'official' mappings.
+    // See https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
+    mappings channel: mapping_channel, version: mapping_version
+
+    // REQUIRED for this template: runs ProcessResources on IDE output before launching the game.
+    copyIdeResources = true
+
+    // Access transformers are applied to the Minecraft artifact in dev. The same file must sit at
+    // META-INF/accesstransformer.cfg in the final mod jar for Forge to load it in production —
+    // which is exactly where it lives, so it is both AT-wired here and packaged by the default jar.
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    runs {
+        // applies to all the run configs below
+        configureEach {
+            workingDirectory project.file('run')
+
+            // Custom log4j2.xml to filter out GeckoLib spam (absolute path required).
+            // Lives in tracked config/ rather than the gitignored run/ so a fresh clone still has it.
+            jvmArg "-Dlog4j.configurationFile=${project.file('config/log4j2.xml').absolutePath}"
+
+            // Recommended logging level for the console
+            property 'forge.logging.console.level', 'info'
+
+            // Many released mods ship Mixins with refmaps that need remapping when running in a dev
+            // environment with official mappings. Without this, Mixins may look for SRG/obf targets
+            // (e.g. m_12345_) and fail.
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', file('build/createSrgToMcp/output.srg').absolutePath
+
+            // This repo ships exactly one mixin config. A config that is registered in mods.toml but
+            // NOT here silently never loads in dev (no error, no crash, no log line).
+            arg '-mixin.config=whatremains.mixins.json'
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            // Allocate enough heap for modded gameplay (chunk loading spikes, etc.)
+            def gcLogPath = project.file('run/logs/runclient-gc.log').absolutePath.replace('\\', '/')
+            def jfrPath = project.file('run/logs/runclient.jfr').absolutePath.replace('\\', '/')
+            jvmArgs '-Xms2G', '-Xmx6G',
+                    '-XX:+UseG1GC',
+                    '-XX:+ParallelRefProcEnabled',
+                    '-XX:MaxGCPauseMillis=50',
+                    '-XX:+UnlockExperimentalVMOptions',
+                    '-XX:+AlwaysPreTouch',
+                    '-XX:G1HeapRegionSize=8M',
+                    '-XX:G1NewSizePercent=30',
+                    '-XX:G1ReservePercent=20',
+                    '-XX:InitiatingHeapOccupancyPercent=15',
+                    "-Xlog:gc*:file=${gcLogPath}:time,uptime,level,tags",
+                    "-XX:StartFlightRecording=filename=${jfrPath},settings=profile,disk=true,dumponexit=true,maxage=30m,maxsize=512M"
+
+            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        // Launches GameTestServer, runs all registered gametests, then exits.
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            // example of overriding the workingDirectory set in configureEach above
+            workingDirectory project.file('run-data')
+
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+// Include resources generated by data generators.
+sourceSets {
+    main {
+        resources {
+            srcDir 'src/generated/resources'
+        }
+    }
+
+    // This project intentionally has no src/test tree.
+    test {
+        java.setSrcDirs([])
+        resources.setSrcDirs([])
+    }
+}
+
+// --- Dev-run mod staging: single resolved path, used by BOTH the repository declaration and the
+// sync routine. In the monorepo these could disagree (the repo pointed at
+// build/stagedRunModsRepo while STAGED_MODS_REPO_DIR redirected the sync elsewhere), so an
+// override silently produced an empty repo. One variable makes that impossible.
+def _stagedEnvOverride = System.getenv('STAGED_MODS_REPO_DIR')
+def stagedRunModsRepoDir = _stagedEnvOverride ? new File(_stagedEnvOverride) : layout.buildDirectory.dir('stagedRunModsRepo').get().asFile
+
+repositories {
+    maven { url 'https://modmaven.dev' }
+    maven { url 'https://maven.blamejared.com' }
+    maven { url 'https://dvs1.progwml6.com/files/maven' }
+
+    // Local Maven repo generated from jars dropped into run/mods_raw (see stageRunMods task).
+    maven {
+        url stagedRunModsRepoDir
+    }
+}
+
+dependencies {
+    // Specify the version of Minecraft to use. The "userdev" classifier is requested and set up by
+    // ForgeGradle.
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // MixinExtras — bundled with Forge 47.4 at runtime, but needed at compile time for
+    // @ModifyReturnValue etc. NO jarJar wiring: the shipped module jars never bundled it (the
+    // monorepo's jarJar tasks were all disabled), and Forge provides it. Adding jarJar here would
+    // change packaging away from the golden reference for no runtime gain.
+    compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.3.5"))
+
+    // --- Third-party compat jars (see DEV_JARS.md). Compile-only, remapped by fg.deobf from the
+    // literal file in run/mods_raw. Every one of these is gated at runtime by a ModList check or a
+    // mixin-plugin gate, so the module loads with them absent.
+    compileOnly fg.deobf(files('run/mods_raw/Jade-1.20.1-Forge-11.13.2.jar'))
+    compileOnly fg.deobf(files('run/mods_raw/curios-forge-5.14.1+1.20.1.jar'))
+
+    // --- Sibling NML module jars (see DEV_JARS.md). Staged from run/mods_raw under the
+    // deterministic coordinate local.runmods:<modid>:1.0.0 by syncStagedRunModsRepo() below, so
+    // the FILENAME in run/mods_raw is load-bearing: it must be exactly <modid>-1.0.0.jar.
+    compileOnly fg.deobf('local.runmods:notminelegacy:1.0.0')
+}
+
+// Extra mods for dev runs only (jars dropped into run/mods_raw).
+// Keeping these separate means `build`/`jar`/`reobfJar` won't resolve them.
+configurations {
+    runModsRuntime
+}
+
+def runModsDropDir = file('run/mods_raw')
+def runModsLegacyDropDir = file('run/mods')
+// If true, any jars mistakenly dropped into run/mods are moved into run/mods_raw automatically.
+// Back-compat: -PautoDisableRawMods=false also disables this.
+def autoMoveRawMods = (project.findProperty('autoMoveRawMods')?.toString()?.toBoolean() ?: true)
+def autoDisableRawMods = (project.findProperty('autoDisableRawMods')?.toString()?.toBoolean() ?: true)
+def runModsGroupId = 'local.runmods'
+
+// Add any jars present in run/mods_raw (or run/mods, if user dropped there) to the dev run
+// classpath. ForgeGradle can then deobfuscate them onto the dev mappings.
+def runModsForDev = files(
+    fileTree(dir: runModsDropDir, include: ['*.jar', '*.jar.disabled']),
+    fileTree(dir: runModsLegacyDropDir, include: ['*.jar', '*.jar.disabled'])
+)
+def runModsDeps = new LinkedHashMap<String, Map>()
+
+def parseRunModsJarToCoords = { File jarFile ->
+    def base = jarFile.name
+    if (base.endsWith('.disabled')) {
+        base = base.substring(0, base.length() - '.disabled'.length())
+    }
+    if (base.toLowerCase(Locale.ROOT).endsWith('.jar')) {
+        base = base.substring(0, base.length() - '.jar'.length())
+    }
+    if (base.isBlank()) {
+        return null
+    }
+
+    // Try splitting on '-' first; fall back to '_' for jars like realmrpg_seadwellers_2.9.9_forge_1.20.1
+    def separator = '-'
+    def parts = base.split('-')
+    if (parts.length < 2) {
+        separator = '_'
+        parts = base.split('_')
+    }
+    if (parts.length < 2) {
+        return null
+    }
+
+    // Heuristic: last segment (or suffix of segments) starting with a digit is treated as version.
+    int versionIndex = -1
+    for (int i = parts.length - 1; i >= 0; i--) {
+        if (parts[i] ==~ /\d.*/) {
+            versionIndex = i
+            break
+        }
+    }
+    if (versionIndex <= 0) {
+        return null
+    }
+
+    def name = parts[0..<versionIndex].join(separator)
+    def version = parts[versionIndex..-1].join(separator)
+
+    if (name.isBlank() || version.isBlank()) {
+        return null
+    }
+
+    return [name: name, version: version, ext: 'jar']
+}
+
+runModsForDev.files.each { File jarFile ->
+    def coords = parseRunModsJarToCoords(jarFile)
+    if (coords != null) {
+        runModsDeps.put(coords.name as String, coords)
+    }
+}
+
+runModsDeps.values().each { Map coords ->
+    dependencies.add('runModsRuntime', fg.deobf("${runModsGroupId}:${coords.name}:${coords.version}"))
+}
+
+def syncStagedRunModsRepo = {
+    // Ensure the raw mods folder exists.
+    if (!runModsDropDir.exists()) {
+        runModsDropDir.mkdirs()
+    }
+
+    // If user dropped jars into run/mods, move them into run/mods_raw so Forge doesn't load them
+    // "raw". This keeps a clean, explicit inventory of modpack jars in run/mods_raw.
+    if (autoDisableRawMods && autoMoveRawMods && runModsLegacyDropDir.exists()) {
+        fileTree(dir: runModsLegacyDropDir, include: ['*.jar', '*.jar.disabled']).files.each { File jarFile ->
+            def outName = jarFile.name
+            if (outName.endsWith('.disabled')) {
+                outName = outName.substring(0, outName.length() - '.disabled'.length())
+            }
+            def target = new File(runModsDropDir, outName)
+            if (!target.exists()) {
+                jarFile.renameTo(target)
+            } else {
+                // If a file already exists in mods_raw, prefer it and keep the dropped copy as a backup.
+                jarFile.renameTo(new File(runModsDropDir, outName + '.dup'))
+            }
+        }
+    }
+
+    if (stagedRunModsRepoDir.exists()) {
+        delete(stagedRunModsRepoDir)
+    }
+    stagedRunModsRepoDir.mkdirs()
+
+    // Build a minimal local Maven repo so ForgeGradle can deobfuscate (remap) these jars.
+    def groupPath = runModsGroupId.replace('.', '/')
+    fileTree(dir: runModsDropDir, include: ['*.jar', '*.jar.disabled']).files.each { File jarFile ->
+        def coords = parseRunModsJarToCoords(jarFile)
+        if (coords == null) {
+            return
+        }
+
+        def artifactDir = new File(stagedRunModsRepoDir, "${groupPath}/${coords.name}/${coords.version}")
+        artifactDir.mkdirs()
+
+        def jarOut = new File(artifactDir, "${coords.name}-${coords.version}.jar")
+        copy {
+            from(jarFile)
+            into(artifactDir)
+            rename { _ -> jarOut.name }
+        }
+
+        def pomOut = new File(artifactDir, "${coords.name}-${coords.version}.pom")
+        pomOut.text = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>${runModsGroupId}</groupId>
+  <artifactId>${coords.name}</artifactId>
+  <version>${coords.version}</version>
+  <packaging>jar</packaging>
+</project>
+"""
+    }
+}
+
+// fg.deobf dependencies resolve before task execution, so the local staged repo must already
+// exist during configuration for a clean runClient invocation to succeed.
+syncStagedRunModsRepo()
+
+tasks.register('stageRunMods') {
+    group = 'forgegradle'
+    description = 'Stages run/mods_raw/*.jar for fg.deobf. Optionally migrates any jars from run/mods into run/mods_raw.'
+
+    inputs.files(files(
+            fileTree(dir: runModsDropDir, include: ['*.jar', '*.jar.disabled']),
+            fileTree(dir: runModsLegacyDropDir, include: ['*.jar', '*.jar.disabled'])
+    ))
+    outputs.dir(stagedRunModsRepoDir)
+
+    doLast {
+        syncStagedRunModsRepo()
+    }
+}
+
+tasks.matching { it.name.startsWith('prepareRun') }.configureEach {
+    dependsOn(tasks.named('stageRunMods'))
+}
+
+// Running runClient/runServer directly does not necessarily execute prepareRun* tasks.
+// Ensure the staged local Maven repo is refreshed before any run task resolves runtimeClasspath.
+tasks.matching { it.name == 'runClient' || it.name == 'runServer' || it.name == 'runData' || it.name == 'runGameTestServer' }.configureEach {
+    dependsOn(tasks.named('stageRunMods'))
+}
+
+// fg.deobf-backed dependencies from run/mods_raw are resolved while compileJava calculates
+// its classpath, so the staged local Maven repo must exist before Java compilation begins.
+tasks.withType(JavaCompile).configureEach {
+    dependsOn(tasks.named('stageRunMods'))
+}
+
+// Attach the run-only modpack jars to the actual dev run tasks' classpath.
+['runClient', 'runServer', 'runData', 'runGameTestServer'].each { String runTaskName ->
+    tasks.matching { it.name == runTaskName }.configureEach {
+        if (it.hasProperty('classpath')) {
+            it.classpath += configurations.runModsRuntime
+        }
+    }
+}
+
+def sharedReplaceProperties = [
+    minecraft_version      : minecraft_version,
+    minecraft_version_range: minecraft_version_range,
+    forge_version          : forge_version,
+    forge_version_range    : forge_version_range,
+    loader_version_range   : loader_version_range,
+    mod_id                 : mod_id,
+    mod_name               : mod_name,
+    mod_license            : mod_license,
+    mod_version            : mod_version,
+    mod_authors            : mod_authors,
+    mod_description        : mod_description,
+]
+
+// Expands all declared replace properties in the specified resource targets. A missing property is
+// a build error. Post-build gate: the processed mods.toml and pack.mcmeta must contain no '${'.
+tasks.named('processResources', ProcessResources).configure {
+    inputs.properties sharedReplaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand sharedReplaceProperties + [project: project]
+    }
+}
+
+// Single-mod repo: the DEFAULT jar (and its reobfJar) is the shipping artifact. No moduleJarSpecs,
+// no per-module jar tasks. Manifest attributes mirror what the monorepo's module jar task wrote.
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+            'Specification-Title'     : mod_id,
+            'Specification-Vendor'    : mod_authors,
+            'Specification-Version'   : '1',
+            'Implementation-Title'    : mod_id,
+            'Implementation-Version'  : project.version,
+            'Implementation-Vendor'   : mod_authors,
+            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // ResourceLocation(String, String/path) is @Deprecated(forRemoval=true) in Mojang's 1.20.1
+    // official mappings, but the replacement (fromNamespaceAndPath) doesn't exist until 1.20.5.
+    // Suppress the lint categories and demote the mandatory javac "Note:" summary lines to INFO
+    // so they don't surface in the default --lifecycle output.
+    options.compilerArgs << '-Xlint:-removal' << '-Xlint:-deprecation' << '-Xlint:-unchecked'
+}

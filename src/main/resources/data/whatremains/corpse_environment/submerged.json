@@ -1,0 +1,7 @@
+{
+  "tracker": "waterlogged",
+  "condition": { "fluid": "water" },
+  "accumulate_rate": 0.000278,
+  "decay_rate": 0.000556,
+  "style_key": "waterlogged"
+}

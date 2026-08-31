@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "whatremains:item/xp_bottle/xp_bottle_1"
+  }
+}

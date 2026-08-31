@@ -1,0 +1,64 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="whatremains"
+version="${mod_version}"
+displayName="Not Mine Legacy: What Remains"
+authors="${mod_authors}"
+description='''Not Mine Legacy: What Remains — A reimagined death corpse system. Player inventory is stored in a skeleton corpse entity on death, configurable and lootable.'''
+
+[[dependencies.whatremains]]
+modId="forge"
+mandatory=true
+versionRange="${forge_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.whatremains]]
+modId="minecraft"
+mandatory=true
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.whatremains]]
+modId="notminelegacy"
+mandatory=true
+versionRange="[${mod_version},)"
+ordering="AFTER"
+side="BOTH"
+
+# Optional. Corpse inventory restore reads Curios slots when present; gated on presence.
+[[dependencies.whatremains]]
+modId="curios"
+mandatory=false
+versionRange="[0,)"
+ordering="AFTER"
+side="BOTH"
+
+# Optional. LB-05: WhatRemainsJadePlugin (compat/jade/) adds a corpse tooltip (owner, decay
+# stage/remaining time, lootable-slot count, stored XP) when Jade is installed; the item-contents
+# summary itself comes from Jade's own built-in Container-based item storage rendering, needing no
+# registration here at all. Absent Jade, none of compat/jade/ ever classloads.
+[[dependencies.whatremains]]
+modId="jade"
+mandatory=false
+versionRange="[11,)"
+ordering="AFTER"
+side="CLIENT"
+
+# DungeonNowLoading Great Bottle o' Enchanting integration. DNL is reflection-only at compile
+# time, but the two @Pseudo mixins are exact-ABI patches against release 2.2. The metadata range
+# and WhatRemainsMixinPlugin's independent early version gate deliberately refuse an unreviewed
+# DNL update instead of risking a required-mixin classload crash.
+[[dependencies.whatremains]]
+modId="dungeonnowloading"
+mandatory=false
+versionRange="[2.2,2.3)"
+ordering="AFTER"
+side="BOTH"
+
+[[mixins]]
+config="whatremains.mixins.json"

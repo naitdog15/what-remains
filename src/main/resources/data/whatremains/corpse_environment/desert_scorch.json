@@ -1,0 +1,7 @@
+{
+  "tracker": "scorch",
+  "condition": { "min_temperature": 0.8, "require_sky_visible": true },
+  "accumulate_rate": 0.00001,
+  "decay_rate": 0.0,
+  "style_key": "desert_sun"
+}

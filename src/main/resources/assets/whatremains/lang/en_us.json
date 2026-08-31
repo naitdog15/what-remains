@@ -1,0 +1,28 @@
+{
+  "entity.whatremains.corpse": "Corpse",
+  "entity.whatremains.corpse.named": "%s's Remains",
+  "item.whatremains.xp_bottle": "XP Bottle",
+  "whatremains.xp_vessel.stored": "Stored XP: %s / %s",
+  "whatremains.xp_vessel.stored_level": "Level %s / %s",
+
+  "whatremains.decay_stage.fresh": "Fresh",
+  "whatremains.decay_stage.early_decay": "Early Decay",
+  "whatremains.decay_stage.mid_decay": "Mid Decay",
+  "whatremains.decay_stage.late_decay": "Late Decay",
+  "whatremains.decay_stage.advanced_decay": "Advanced Decay",
+  "whatremains.decay_stage.skeletal": "Skeletal",
+  "whatremains.decay_stage.collapse": "Collapse",
+
+  "config.jade.plugin_whatremains.corpse_info": "Corpse Info",
+  "jade.whatremains.corpse.owner": "Owner: %s",
+  "jade.whatremains.corpse.owner_unknown": "Owner: Unknown",
+  "jade.whatremains.corpse.decay_stage": "Decay: %s",
+  "jade.whatremains.corpse.time_left": "%s until collapse",
+  "jade.whatremains.corpse.collapsing": "Collapsing...",
+  "jade.whatremains.corpse.time_days": "%sd %sh",
+  "jade.whatremains.corpse.time_hours": "%sh %sm",
+  "jade.whatremains.corpse.time_minutes": "%sm",
+  "jade.whatremains.corpse.time_seconds": "%ss",
+  "jade.whatremains.corpse.lootable_slots": "Lootable slots: %s/%s",
+  "jade.whatremains.corpse.stored_xp": "Stored XP: %s"
+}

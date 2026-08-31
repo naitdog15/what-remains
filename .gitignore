@@ -1,0 +1,27 @@
+# Gradle / build
+.gradle/
+build/
+out/
+bin/
+# Dev runtime (regenerable; jars in run/mods_raw are local-only deps, see DEV_JARS.md)
+run/
+runs/
+run-data/
+run_cached/
+# Logs
+logs/
+*.log
+crash-reports/
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+# Reference material lives in ../../_reference/ — never committed
+reference/
+references/
+reference_package/
+# Local agent state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+eclipse/

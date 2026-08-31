@@ -1,0 +1,12 @@
+{
+  "tracker": "calcify",
+  "condition": {
+    "require_no_sky": true,
+    "min_temperature": 0.2,
+    "max_temperature": 0.75,
+    "min_age_ticks": 24000
+  },
+  "accumulate_rate": 0.000005,
+  "decay_rate": 0.0,
+  "style_key": "calcify"
+}

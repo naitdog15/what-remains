@@ -1,0 +1,7 @@
+{
+  "tracker": "scorch",
+  "condition": { "biome_tag": "minecraft:is_nether" },
+  "accumulate_rate": 0.00001,
+  "decay_rate": 0.0,
+  "style_key": "nether_ash"
+}

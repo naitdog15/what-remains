@@ -1,0 +1,16 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "dungeonnowloading:item/great_experience_bottle"
+  },
+  "overrides": [
+    { "predicate": { "whatremains:xp_fill": 0.0000001 }, "model": "dungeonnowloading:item/great_experience_bottle_0" },
+    { "predicate": { "whatremains:xp_fill": 0.125 }, "model": "dungeonnowloading:item/great_experience_bottle_1" },
+    { "predicate": { "whatremains:xp_fill": 0.25 }, "model": "dungeonnowloading:item/great_experience_bottle_2" },
+    { "predicate": { "whatremains:xp_fill": 0.375 }, "model": "dungeonnowloading:item/great_experience_bottle_3" },
+    { "predicate": { "whatremains:xp_fill": 0.5 }, "model": "dungeonnowloading:item/great_experience_bottle_4" },
+    { "predicate": { "whatremains:xp_fill": 0.625 }, "model": "dungeonnowloading:item/great_experience_bottle_5" },
+    { "predicate": { "whatremains:xp_fill": 0.75 }, "model": "dungeonnowloading:item/great_experience_bottle_6" },
+    { "predicate": { "whatremains:xp_fill": 0.875 }, "model": "dungeonnowloading:item/great_experience_bottle_7" }
+  ]
+}
