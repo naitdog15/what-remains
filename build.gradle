@@ -397,7 +397,8 @@ tasks.named('jar', Jar).configure {
             'Implementation-Title'    : mod_id,
             'Implementation-Version'  : project.version,
             'Implementation-Vendor'   : mod_authors,
-            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+            'MixinConfigs'            : 'whatremains.mixins.json'
         ])
     }
 }
@@ -410,3 +411,19 @@ tasks.withType(JavaCompile).configureEach {
     // so they don't surface in the default --lifecycle output.
     options.compilerArgs << '-Xlint:-removal' << '-Xlint:-deprecation' << '-Xlint:-unchecked'
 }
+
+// Dev-env auto-publish — copies the built jar into ../../_dev-env/mods when the workspace dev
+// environment exists; safe no-op otherwise.
+def devEnvModsDir = project.file('../../_dev-env/mods')
+def devEnvJar = tasks.named('jar', Jar).flatMap { it.archiveFile }
+tasks.register('publishToDevEnv') {
+    dependsOn tasks.named('jar')
+    mustRunAfter tasks.named('reobfJar')
+    onlyIf { devEnvModsDir.isDirectory() }
+    doLast {
+        copy { from devEnvJar; into devEnvModsDir }
+        println "published ${devEnvJar.get().asFile.name} to _dev-env/mods"
+    }
+}
+tasks.named('build') { finalizedBy 'publishToDevEnv' }
+tasks.named('assemble') { finalizedBy 'publishToDevEnv' }

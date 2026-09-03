@@ -131,7 +131,13 @@ public final class CorpseRenderState {
      *  above {@code charLevel 0.5} (lava's headline "near-bare skeleton regardless of age" lever). */
     public final float externalRevealBoost;
 
-    private CorpseRenderState(DecayStage decayStage, float stageProgress, float overallProgress,
+    // Visibility widened private -> package-private (constructor only; no other change) so a
+    // same-package headless measurement harness (CorpsePatchStitcherHarness) can construct a
+    // CorpseRenderState directly from literal endpoint values, exactly mirroring how
+    // CorpseBlotchLayoutHarness already captures ENDPOINTS' literal MID/LATE/etc. numbers by hand
+    // rather than calling #fromAge (which depends on WhatRemainsConfig.decayLifespanTicks, a
+    // Forge-config value never populated outside a running mod instance). No behavioural change.
+    CorpseRenderState(DecayStage decayStage, float stageProgress, float overallProgress,
                               int visualStep, Endpoint values, float externalRevealBoost) {
         this.decayStage = decayStage;
         this.stageProgress = stageProgress;
@@ -378,7 +384,9 @@ public final class CorpseRenderState {
         return red << 16 | green << 8 | blue;
     }
 
-    private record Endpoint(float fullness, float hue, float saturation, float value,
+    // Visibility widened private -> package-private (see constructor above for rationale). Field
+    // list, semantics, and the lerp() helper below are byte-for-byte unchanged.
+    record Endpoint(float fullness, float hue, float saturation, float value,
                             int primaryRgb, float primaryCoverage, float minDiameter,
                             float maxDiameter, int secondaryRgb, float secondaryCoverage,
                             float secondaryMinDiameter, float secondaryMaxDiameter, float holes) {
