@@ -2,6 +2,7 @@ package com.temog.notminelegacy.whatremains.menu;
 
 import com.mojang.datafixers.util.Pair;
 import com.temog.notminelegacy.compat.ModCompat;
+import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
 import com.temog.notminelegacy.whatremains.compat.WRCuriosCompat;
 import com.temog.notminelegacy.whatremains.entity.CorpseEntity;
 import com.temog.notminelegacy.whatremains.registry.WRMenus;
@@ -16,6 +17,8 @@ import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Equipable;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -31,6 +34,11 @@ import com.mojang.logging.LogUtils;
  *   <li>5-40: General inventory (irregular grid) — randomly lock over time</li>
  *   <li>41+: Curios/accessories (dynamic count) — never decay, shown in panel</li>
  * </ul>
+ * <p>
+ * An armor piece (0-3) carrying vanilla's Curse of Binding can never be removed from its slot here
+ * (see the armor {@code Slot}'s {@code mayPickup} override and {@link #quickMoveStack}'s guard) —
+ * gated by {@code WhatRemainsConfig.enableCurseOfBindingLocksToCorpse}. It drops normally once the
+ * corpse itself is destroyed, same as everything else.
  */
 public class CorpseMenu extends AbstractContainerMenu {
 
@@ -97,6 +105,21 @@ public class CorpseMenu extends AbstractContainerMenu {
                         return eq.getEquipmentSlot() == equipSlot;
                     }
                     return false;
+                }
+
+                /**
+                 * Curse of Binding: a piece carrying it can never be removed from the corpse's
+                 * armor slot via the GUI — not a plain pickup, and not a swap (a swap's incoming
+                 * item is still gated normally by {@link #mayPlace}, but the outgoing bound piece
+                 * is refused here just the same as a bare pickup). The other half of this lock —
+                 * closing the hopper path, since the corpse is a plain {@code Container} a hopper
+                 * can pull from directly, bypassing this Menu/Slot layer entirely — lives in
+                 * {@code CorpseEntity#removeItem}/{@code #removeItemNoUpdate}.
+                 */
+                @Override
+                public boolean mayPickup(Player player) {
+                    if (!WhatRemainsConfig.enableCurseOfBindingLocksToCorpse) return true;
+                    return EnchantmentHelper.getItemEnchantmentLevel(Enchantments.BINDING_CURSE, getItem()) <= 0;
                 }
 
                 @Override
@@ -184,6 +207,12 @@ public class CorpseMenu extends AbstractContainerMenu {
         ItemStack result = ItemStack.EMPTY;
         Slot slot = this.slots.get(index);
         if (slot == null || !slot.hasItem()) return result;
+
+        // Shift-click bypasses the normal single-click path entirely, so it must re-check
+        // mayPickup itself -- a bound armor Slot (Curse of Binding) refuses it there, and this
+        // is the only thing standing between that refusal and a shift-click walking straight
+        // around it.
+        if (!slot.mayPickup(player)) return result;
 
         ItemStack slotStack = slot.getItem();
         result = slotStack.copy();

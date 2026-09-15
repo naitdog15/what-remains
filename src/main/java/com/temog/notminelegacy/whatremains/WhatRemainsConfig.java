@@ -49,6 +49,13 @@ public final class WhatRemainsConfig {
     private static final ForgeConfigSpec.IntValue CORPSE_INVENTORY_SIZE;
     private static final ForgeConfigSpec.IntValue SHOVEL_HITS_TO_BURY;
 
+    // ── LB-01: Soulbound enchantment ────────────────────────────────────────
+
+    private static final ForgeConfigSpec.BooleanValue ENABLE_SOULBOUND;
+    private static final ForgeConfigSpec.ConfigValue<List<? extends Double>> SOULBOUND_CHANCE_PER_LEVEL;
+    private static final ForgeConfigSpec.BooleanValue ENABLE_CURSE_OF_BINDING_LOCKS_TO_CORPSE;
+    private static final ForgeConfigSpec.BooleanValue ENABLE_CURSE_OF_VANISHING_DESTROY;
+
     // ── Damage-source whitelist ─────────────────────────────────────────────
 
     private static final ForgeConfigSpec.BooleanValue HURT_BY_ALL;
@@ -66,6 +73,7 @@ public final class WhatRemainsConfig {
     private static final ForgeConfigSpec.BooleanValue DECAY_ONLY_WHEN_EMPTY;
     private static final ForgeConfigSpec.IntValue DECAY_TIME_SECONDS;
     private static final ForgeConfigSpec.DoubleValue DECAY_LIFESPAN_DAYS;
+    private static final ForgeConfigSpec.DoubleValue SKELETAL_STAGE_LIFESPAN_DAYS;
     private static final ForgeConfigSpec.DoubleValue FLY_DECAY_BONUS_PER_FLY;
     private static final ForgeConfigSpec.DoubleValue VULTURE_DECAY_BONUS_PER_VULTURE;
     private static final ForgeConfigSpec.BooleanValue DEBUG_FLIES_IGNORE_DECAY_STAGE;
@@ -143,6 +151,53 @@ public final class WhatRemainsConfig {
 
         BUILDER.pop();
 
+        // ── LB-01: Soulbound enchantment ─────────────────────────────────────
+        BUILDER.push("soulbound");
+
+        ENABLE_SOULBOUND = BUILDER
+                .comment("Master switch for the Soulbound enchantment's death-time effect. If false, ",
+                        "Soulbound items transfer into the corpse exactly like any unenchanted item, ",
+                        "regardless of level -- the enchantment itself remains obtainable/visible either way.")
+                .define("enableSoulbound", true);
+        SOULBOUND_CHANCE_PER_LEVEL = BUILDER
+                .comment("Chance (0.0-1.0), rolled independently per item at death, that a Soulbound ",
+                        "level N item stays in the player's inventory instead of transferring into ",
+                        "their corpse. Index 0 = level 1, index 1 = level 2, etc. A level beyond this ",
+                        "list's length (e.g. an NBT-forged item) reuses the last entry rather than ",
+                        "exceeding it. A kept item still takes the exact same itemDamageOnDeath ",
+                        "durability hit it would have taken going into the corpse -- Soulbound saves ",
+                        "the ITEM, never its durability, so it can't be used to dodge that penalty.")
+                .defineList("chancePerLevel", List.of(0.35, 0.60, 0.85),
+                        o -> o instanceof Double d && d >= 0.0D && d <= 1.0D);
+
+        BUILDER.pop();
+
+        // ── Vanilla curse re-homing (this mod bypasses vanilla's own drop/curse handling ────────
+        // entirely, so without these two switches Binding and Vanishing would otherwise have no
+        // effect at all on a death here) ──
+        BUILDER.push("deathCurses");
+
+        ENABLE_CURSE_OF_BINDING_LOCKS_TO_CORPSE = BUILDER
+                .comment("If true, an armor piece enchanted with vanilla's Curse of Binding transfers ",
+                        "into the corpse completely normally on death, but can then never be removed ",
+                        "from the corpse's armor slot -- not via the corpse GUI (picking it up, quick- ",
+                        "moving it, or swapping another piece into that slot), and not via a hopper ",
+                        "(the corpse is a plain Container a hopper can pull from directly, bypassing ",
+                        "the GUI entirely) -- until the corpse itself is destroyed (buried, decayed out, ",
+                        "or collapsed), at which point it drops with everything else like normal. If ",
+                        "false, Binding has no special effect here and the piece can be looted freely.")
+                .define("enableCurseOfBindingLocksToCorpse", true);
+        ENABLE_CURSE_OF_VANISHING_DESTROY = BUILDER
+                .comment("If true, an item enchanted with vanilla's Curse of Vanishing is destroyed ",
+                        "outright on death -- never transferred to the corpse, never kept -- matching ",
+                        "vanilla's own 'disappears instead of dropping' behaviour. Checked before ",
+                        "Binding and before a Soulbound roll, so a Vanishing item is never kept by ",
+                        "either. If false, Vanishing has no special effect here and the item transfers ",
+                        "to the corpse normally.")
+                .define("enableCurseOfVanishingDestroy", true);
+
+        BUILDER.pop();
+
         // ── Damage sources ──────────────────────────────────────────────────
         BUILDER.push("corpseDamage");
 
@@ -186,11 +241,22 @@ public final class WhatRemainsConfig {
                 .comment("Seconds after death before a corpse decays (min 2).")
                 .defineInRange("decayTimeSeconds", 3600, 2, Integer.MAX_VALUE / 20);
         DECAY_LIFESPAN_DAYS = BUILDER
-                .comment("Number of Minecraft days (fractional allowed) for the full corpse decay lifecycle "
-                        + "(visual stages + collapse), at the neutral-temperature/sky-visible baseline (1.0x "
-                        + "decay-rate multiplier) with no flies landed. 2.5 days = 50 real minutes at 1.0x; a "
-                        + "Plains-biome corpse (~1.09x) collapses in ~46 real minutes, skeletal at ~39 minutes.")
+                .comment("Number of Minecraft days (fractional allowed) for the FRESH..ADVANCED_DECAY "
+                        + "visual-stage progression (i.e. up to but not including SKELETAL -- see "
+                        + "skeletalStageLifespanDays below for how long the corpse then stays skeletal "
+                        + "before it actually collapses), at the neutral-temperature/sky-visible baseline "
+                        + "(1.0x decay-rate multiplier) with no flies landed. 2.5 days = 50 real minutes at "
+                        + "1.0x; a Plains-biome corpse (~1.09x) reaches SKELETAL in ~46 real minutes.")
                 .defineInRange("decayLifespanDays", 2.5, 0.05, 365.0);
+        SKELETAL_STAGE_LIFESPAN_DAYS = BUILDER
+                .comment("Number of Minecraft days (fractional allowed) the corpse spends in the SKELETAL "
+                        + "stage before it finally collapses -- separate from and NOT scaled by "
+                        + "decayLifespanDays above. Bone degrades far slower than flesh, so this defaults "
+                        + "much longer than the entire FRESH..ADVANCED_DECAY progression combined (20.0 "
+                        + "days = ~6h40m real time at 1.0x, versus decayLifespanDays' default ~46 real "
+                        + "minutes to reach SKELETAL in the first place) -- a corpse reduced to bones is "
+                        + "meant to persist, not vanish shortly after its flesh does.")
+                .defineInRange("skeletalStageLifespanDays", 20.0, 0.05, 365.0);
         FLY_DECAY_BONUS_PER_FLY = BUILDER
                 .comment("Extra decay-speed multiplier added per fly currently landed on this corpse "
                         + "(BuildingBridges' corpse-fly bridge, if installed). 0 disables the effect. "
@@ -670,6 +736,11 @@ public final class WhatRemainsConfig {
     public static int corpseInventorySize;
     public static int shovelHitsToBury;
 
+    public static boolean enableSoulbound;
+    public static List<? extends Double> soulboundChancePerLevel;
+    public static boolean enableCurseOfBindingLocksToCorpse;
+    public static boolean enableCurseOfVanishingDestroy;
+
     public static boolean hurtByAll;
     public static boolean hurtByFire;
     public static boolean hurtByExplosions;
@@ -685,8 +756,11 @@ public final class WhatRemainsConfig {
     public static boolean decayOnlyWhenEmpty;
     /** Decay time in game ticks. */
     public static long decayTimeTicks;
-    /** Full decay lifecycle lifespan in ticks (1 MC day = 24 000 ticks). */
+    /** FRESH..ADVANCED_DECAY lifespan in ticks (1 MC day = 24 000 ticks) -- see {@link DecayStage#getTotalLifespanTicks()}. */
     public static int decayLifespanTicks;
+    /** SKELETAL stage's own duration in ticks, independent of {@link #decayLifespanTicks} -- see
+     *  {@link DecayStage#getFullLifespanTicks()}. */
+    public static int skeletalStageLifespanTicks;
     /** Extra decay-speed multiplier added per fly landed on the corpse (BuildingBridges bridge). */
     public static double flyDecayBonusPerFly;
     /** Extra decay-speed multiplier added per vulture feeding on the corpse (BuildingBridges bridge).
@@ -928,6 +1002,11 @@ public final class WhatRemainsConfig {
         corpseInventorySize = CORPSE_INVENTORY_SIZE.get();
         shovelHitsToBury    = SHOVEL_HITS_TO_BURY.get();
 
+        enableSoulbound          = ENABLE_SOULBOUND.get();
+        soulboundChancePerLevel  = SOULBOUND_CHANCE_PER_LEVEL.get();
+        enableCurseOfBindingLocksToCorpse = ENABLE_CURSE_OF_BINDING_LOCKS_TO_CORPSE.get();
+        enableCurseOfVanishingDestroy     = ENABLE_CURSE_OF_VANISHING_DESTROY.get();
+
         hurtByAll           = HURT_BY_ALL.get();
         hurtByFire          = HURT_BY_FIRE.get();
         hurtByExplosions    = HURT_BY_EXPLOSIONS.get();
@@ -944,6 +1023,7 @@ public final class WhatRemainsConfig {
         decayOnlyWhenEmpty = DECAY_ONLY_WHEN_EMPTY.get();
         decayTimeTicks     = (long) DECAY_TIME_SECONDS.get() * 20L;
         decayLifespanTicks = (int) Math.round(DECAY_LIFESPAN_DAYS.get() * 24_000.0);
+        skeletalStageLifespanTicks = (int) Math.round(SKELETAL_STAGE_LIFESPAN_DAYS.get() * 24_000.0);
         flyDecayBonusPerFly = FLY_DECAY_BONUS_PER_FLY.get();
         vultureDecayBonusPerVulture = VULTURE_DECAY_BONUS_PER_VULTURE.get();
         debugFliesIgnoreDecayStage = DEBUG_FLIES_IGNORE_DECAY_STAGE.get();

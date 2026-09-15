@@ -2,6 +2,7 @@
   "entity.whatremains.corpse": "Corpse",
   "entity.whatremains.corpse.named": "%s's Remains",
   "item.whatremains.xp_bottle": "XP Bottle",
+  "enchantment.whatremains.soulbound": "Soulbound",
   "whatremains.xp_vessel.stored": "Stored XP: %s / %s",
   "whatremains.xp_vessel.stored_level": "Level %s / %s",
 

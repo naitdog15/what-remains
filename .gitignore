@@ -25,3 +25,8 @@ reference_package/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 eclipse/
+
+# AI tooling / local agent state — never committed
+/CLAUDE.md
+/AGENTS.md
+.claude/

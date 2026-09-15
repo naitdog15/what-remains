@@ -12,7 +12,9 @@ import com.temog.notminelegacy.whatremains.entity.StuckProjectile;
 import com.temog.notminelegacy.whatremains.registry.WREntities;
 import com.temog.notminelegacy.whatremains.xp.XpVessel;
 
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.entity.projectile.AbstractArrow;
@@ -67,6 +69,10 @@ public final class PlayerDeathHandler {
         // Respect keepInventory gamerule
         if (level.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY)) return;
 
+        // Drop any stash left over from an earlier death before this death's keep decisions start
+        // writing to it -- see ItemRetentionHandler's class javadoc on why that matters.
+        ItemRetentionHandler.clearStash(player);
+
         float rotation = player.getYHeadRot();
 
         // Snapshot the main-hand stack for the corpse's render-only "still clutching this" visual,
@@ -82,17 +88,30 @@ public final class PlayerDeathHandler {
         corpse.setDeathTimestamp(level.getGameTime());
 
         // Transfer armor directly into dedicated armor slots (0=head, 1=chest, 2=legs, 3=feet)
-        net.minecraft.world.entity.EquipmentSlot[] armorOrder = {
-                net.minecraft.world.entity.EquipmentSlot.HEAD,
-                net.minecraft.world.entity.EquipmentSlot.CHEST,
-                net.minecraft.world.entity.EquipmentSlot.LEGS,
-                net.minecraft.world.entity.EquipmentSlot.FEET,
+        EquipmentSlot[] armorOrder = {
+                EquipmentSlot.HEAD,
+                EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS,
+                EquipmentSlot.FEET,
         };
         for (int i = 0; i < armorOrder.length; i++) {
             ItemStack armor = player.getItemBySlot(armorOrder[i]);
-            if (!armor.isEmpty()) {
-                corpse.setItem(i, armor.copy());
-                player.setItemSlot(armorOrder[i], ItemStack.EMPTY);
+            if (armor.isEmpty()) continue;
+
+            // Armor never takes itemDamageOnDeath on the normal corpse path either (only
+            // vacuumItem'd general-inventory stacks do), so a KEEP outcome applies no extra
+            // damage here -- parity means "whatever the corpse path would have done", not
+            // "always damage it".
+            switch (resolveDeathOutcome(armor, level.random)) {
+                case DESTROY -> player.setItemSlot(armorOrder[i], ItemStack.EMPTY);
+                case KEEP -> {
+                    ItemRetentionHandler.stash(player, armor.copy(), armorOrder[i]);
+                    player.setItemSlot(armorOrder[i], ItemStack.EMPTY);
+                }
+                case CORPSE -> {
+                    corpse.setItem(i, armor.copy());
+                    player.setItemSlot(armorOrder[i], ItemStack.EMPTY);
+                }
             }
         }
 
@@ -118,18 +137,44 @@ public final class PlayerDeathHandler {
         // Transfer offhand into dedicated offhand slot
         for (int i = 0; i < player.getInventory().offhand.size(); i++) {
             ItemStack offhand = player.getInventory().offhand.get(i);
-            if (!offhand.isEmpty()) {
-                corpse.setItem(CorpseEntity.OFFHAND_INDEX, offhand.copy());
-                player.getInventory().offhand.set(i, ItemStack.EMPTY);
+            if (offhand.isEmpty()) continue;
+
+            // Same no-extra-damage parity as the armor loop above -- the offhand slot is never
+            // run through applyItemDamage on the normal corpse path either.
+            switch (resolveDeathOutcome(offhand, level.random)) {
+                case DESTROY -> player.getInventory().offhand.set(i, ItemStack.EMPTY);
+                case KEEP -> {
+                    ItemRetentionHandler.stash(player, offhand.copy(), EquipmentSlot.OFFHAND);
+                    player.getInventory().offhand.set(i, ItemStack.EMPTY);
+                }
+                case CORPSE -> {
+                    corpse.setItem(CorpseEntity.OFFHAND_INDEX, offhand.copy());
+                    player.getInventory().offhand.set(i, ItemStack.EMPTY);
+                }
             }
         }
 
         // Transfer main inventory (includes hotbar)
         for (int i = 0; i < player.getInventory().items.size(); i++) {
             ItemStack item = player.getInventory().items.get(i);
-            if (!item.isEmpty()) {
-                corpse.vacuumItem(item.copy());
-                player.getInventory().items.set(i, ItemStack.EMPTY);
+            if (item.isEmpty()) continue;
+
+            // General-inventory stacks DO take itemDamageOnDeath on the normal corpse path
+            // (inside CorpseEntity#vacuumItem), so a KEEP outcome gets that exact same call
+            // applied explicitly -- keeping an item saves it from the corpse, never from its
+            // durability penalty. No armor-slot equivalent (see the two loops above); a null slot
+            // marks this as a plain inventory-add on restore rather than an equip.
+            switch (resolveDeathOutcome(item, level.random)) {
+                case DESTROY -> player.getInventory().items.set(i, ItemStack.EMPTY);
+                case KEEP -> {
+                    ItemStack kept = CorpseEntity.applyItemDamage(item.copy());
+                    ItemRetentionHandler.stash(player, kept, null);
+                    player.getInventory().items.set(i, ItemStack.EMPTY);
+                }
+                case CORPSE -> {
+                    corpse.vacuumItem(item.copy());
+                    player.getInventory().items.set(i, ItemStack.EMPTY);
+                }
             }
         }
 
@@ -185,6 +230,24 @@ public final class PlayerDeathHandler {
         // Capture how the player died, purely as data for a later (separately-scoped) cause-specific
         // corpse visual treatment (e.g. burned -> charred). Set once, at spawn, never touched again.
         corpse.setDeathCause(DeathCause.fromDamageSource(event.getSource()));
+    }
+
+    /** What happens to one item at death, shared by the armor/offhand/main-inventory loops above. */
+    private enum DeathOutcome { DESTROY, KEEP, CORPSE }
+
+    /**
+     * Vanishing is checked first (matching vanilla's own precedence: a vanishing-cursed item is
+     * destroyed before anything else about death-inventory handling runs), then a Soulbound chance
+     * roll. Curse of Binding is NOT decided here at all — a bound armor piece transfers into the
+     * corpse completely normally (falls through to {@code CORPSE} like an unenchanted item) and is
+     * instead locked in place once it's there; see {@code CorpseMenu}'s armor {@code Slot} and
+     * {@code CorpseEntity#removeItem}/{@code #removeItemNoUpdate}. See {@link ItemRetentionHandler}'s
+     * class javadoc for the full exploit/precedence analysis.
+     */
+    private static DeathOutcome resolveDeathOutcome(ItemStack stack, RandomSource random) {
+        if (ItemRetentionHandler.isVanishing(stack)) return DeathOutcome.DESTROY;
+        if (ItemRetentionHandler.rollKeep(stack, random)) return DeathOutcome.KEEP;
+        return DeathOutcome.CORPSE;
     }
 
     /**

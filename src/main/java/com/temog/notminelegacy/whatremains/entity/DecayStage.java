@@ -26,18 +26,26 @@ public enum DecayStage {
     // used). ADVANCED_DECAY takes the OLD SKELETAL's exact old fraction (12/14) and every render
     // endpoint/table entry that used to live at that position, so everything a player has already
     // seen at "12/14 decay" looks IDENTICAL post-change — nothing regresses, it's purely renamed
-    // and given a successor. The NEW SKELETAL is a short final 1/14-wide stage (13/14) representing
+    // and given a successor. The NEW SKELETAL starts at that same 13/14 position, representing
     // total flesh loss — a literal bare exoskeleton with no flesh baked onto it at all (see
     // CorpseFleshBaker#resolve's SKELETAL guard) and no fly interest (see
     // buildingbridges.compat.alexsmobs.CorpseFlyAccessibility#isAccessible) — there's nothing left
-    // to feed on. COLLAPSE (the near-instant despawn/drop-all trigger) keeps its 14/14 position.
+    // to feed on. Its DURATION, though, is deliberately NOT the leftover 1/14 sliver this fraction
+    // table implies: bone degrades far slower than flesh, so SKELETAL reads its own independently
+    // configured (and by default much longer) duration from WhatRemainsConfig.skeletalStageLifespanTicks
+    // instead of being scaled off the shared fraction/total like every other stage — see
+    // getDuration()/getStartTick() and getFullLifespanTicks()'s own notes for exactly how that's
+    // wired without disturbing FRESH..ADVANCED_DECAY's existing (unrelated) pacing or the render
+    // pipeline's flesh-decay gradient. COLLAPSE begins wherever that extended SKELETAL stage
+    // actually ends, whatever tick that turns out to be — its own "14/14" fraction below is now
+    // purely nominal/unused (see getStartTick()'s COLLAPSE override).
     FRESH          (  0.0     ),  // 0/14
     EARLY_DECAY    (  1.0 / 14),  // 1/14
     MID_DECAY      (  5.0 / 14),  // 5/14
     LATE_DECAY     (  9.0 / 14),  // 9/14
     ADVANCED_DECAY ( 12.0 / 14),  // 12/14 — old SKELETAL's position, look unchanged
-    SKELETAL       ( 13.0 / 14),  // 13/14 — NEW: short final bare-exoskeleton stage
-    COLLAPSE       (  1.0     );  // 14/14
+    SKELETAL       ( 13.0 / 14),  // 13/14 start; duration is its OWN config value, not 1/14 of total
+    COLLAPSE       (  1.0     );  // fraction unused -- see getStartTick()'s COLLAPSE override
 
     // ── Fields ──────────────────────────────────────────────────────────────
 
@@ -47,14 +55,28 @@ public enum DecayStage {
         this.fraction = fraction;
     }
 
-    /** The tick at which this stage begins, scaled to the configured lifespan. */
+    /**
+     * The tick at which this stage begins.
+     * <p>
+     * Every stage except {@link #COLLAPSE} is scaled off {@link #getTotalLifespanTicks()} exactly
+     * as before. {@link #COLLAPSE} is the one exception (see its own note on
+     * {@link #getFullLifespanTicks()}): it begins wherever {@link #SKELETAL} actually ends, which is
+     * no longer a fixed fraction of {@link #getTotalLifespanTicks()} now that Skeletal has its own,
+     * independently configured (and typically much longer) duration.
+     */
     public int getStartTick() {
+        if (this == COLLAPSE) {
+            return SKELETAL.getStartTick() + SKELETAL.getDuration();
+        }
         return (int) (fraction * getTotalLifespanTicks());
     }
 
     /**
-     * The tick at which this stage ends (exclusive).
-     * For the last stage this returns {@code getTotalLifespanTicks() + 1}.
+     * The tick at which this stage ends (exclusive). Unchanged for every stage except
+     * {@link #COLLAPSE} (the last stage, effectively terminal — nothing meaningfully reads its end
+     * tick) — {@link #SKELETAL}'s own end automatically falls out of this method correctly once
+     * {@link #COLLAPSE#getStartTick()} reflects its extended duration, since this still just returns
+     * "the next stage's start tick" for every non-terminal stage.
      */
     public int getEndTick() {
         DecayStage[] stages = values();
@@ -62,19 +84,53 @@ public enum DecayStage {
         if (idx + 1 < stages.length) {
             return stages[idx + 1].getStartTick();
         }
-        return getTotalLifespanTicks() + 1;
+        return getStartTick() + 1;
     }
 
-    /** Duration of this stage in ticks. */
+    /**
+     * Duration of this stage in ticks.
+     * <p>
+     * {@link #SKELETAL} is special-cased to read its own independently configured duration
+     * ({@link WhatRemainsConfig#skeletalStageLifespanTicks}) directly, rather than deriving it from
+     * {@code getEndTick() - getStartTick()} — that generic formula would recurse infinitely here,
+     * since {@code SKELETAL.getEndTick()} resolves through {@code COLLAPSE.getStartTick()}, which
+     * itself is defined in terms of {@code SKELETAL.getDuration()} (see {@link #getStartTick()}).
+     */
     public int getDuration() {
+        if (this == SKELETAL) {
+            return WhatRemainsConfig.skeletalStageLifespanTicks;
+        }
         return getEndTick() - getStartTick();
     }
 
     // ── Configurable lifespan ───────────────────────────────────────────────
 
-    /** Total corpse lifespan in ticks, read from config. */
+    /**
+     * Lifespan in ticks covering FRESH..ADVANCED_DECAY only (i.e. everything up to where Skeletal
+     * begins), read from config. Deliberately NOT the whole corpse lifecycle — see
+     * {@link #getFullLifespanTicks()} for that, and its own note on why the two must stay separate.
+     */
     public static int getTotalLifespanTicks() {
         return WhatRemainsConfig.decayLifespanTicks;
+    }
+
+    /**
+     * The REAL total corpse lifespan in ticks, including Skeletal's own (typically much longer,
+     * independently configured) duration — i.e. the tick at which {@link #COLLAPSE} begins. Use this
+     * (not {@link #getTotalLifespanTicks()}) for anything reporting overall time-to-live, such as a
+     * "time until collapse" UI line.
+     * <p>
+     * Deliberately kept separate from {@link #getTotalLifespanTicks()} rather than folding Skeletal's
+     * duration into that same figure: {@link com.temog.notminelegacy.whatremains.client.CorpseRenderState#fromAge}
+     * quantises FRESH..ADVANCED_DECAY's flesh-decay gradient into a fixed number of visual steps
+     * scaled against {@link #getTotalLifespanTicks()}, and {@link com.temog.notminelegacy.whatremains.client.CorpseFleshBaker#resolve}
+     * never bakes flesh for SKELETAL/COLLAPSE at all (they render as a bare, static skeleton) — so
+     * widening that denominator to include a long Skeletal stage would only crush the already-tuned
+     * FRESH..ADVANCED_DECAY gradient down to a handful of visual steps, for a stage that never reads
+     * the result anyway.
+     */
+    public static int getFullLifespanTicks() {
+        return COLLAPSE.getStartTick();
     }
 
     // ── Lookup helpers ──────────────────────────────────────────────────────

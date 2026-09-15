@@ -4,10 +4,22 @@ plugins {
     // Pinned (was '[6.0,6.2)' in the monorepo): a floating range makes an offline build depend on
     // whatever happened to be cached, and silently changes reobf/AT behaviour between machines.
     id 'net.minecraftforge.gradle' version '6.0.54'
+    // Generates a Mixin refmap at compile time and wires it into reobfJar's SRG remapping.
+    // Without this, mixin target selectors (written with official/MCP names for dev convenience)
+    // are never translated to SRG names for the shipped jar, and every @Inject/@Redirect etc.
+    // fails at runtime outside the ForgeGradle dev environment with "No refMap loaded" — harmless
+    // in dev (MC classes are already official-named there), fatal in a real Forge install.
+    id 'org.spongepowered.mixin' version '0.7.38'
+}
+
+mixin {
+    add sourceSets.main, 'whatremains.refmap.json'
+    config 'whatremains.mixins.json'
 }
 
 dependencies {
     implementation 'org.eclipse.jdt:org.eclipse.jdt.annotation:2.2.0'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 
 def mod_version = project.hasProperty('mod_version') ? project.mod_version : '1.0.0'
@@ -119,6 +131,23 @@ minecraft {
             workingDirectory project.file('run-data')
 
             args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+// Placed at top level, AFTER the whole minecraft { } block.
+// The JVM opens its -Xlog and JFR output files before anything else runs and refuses to start
+// ("Error: Could not create the Java Virtual Machine") when the parent directory is missing.
+// On a fresh clone run/logs/ does not exist yet, which made runClient unlaunchable.
+def runLogsDir = layout.projectDirectory.dir('run/logs').asFile
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    doFirst {
+        if (runLogsDir.exists() && !runLogsDir.isDirectory()) {
+            throw new GradleException("Run log path is not a directory: ${runLogsDir}")
+        }
+        if (!runLogsDir.exists() && !runLogsDir.mkdirs()) {
+            throw new GradleException("Could not create run log directory: ${runLogsDir}")
         }
     }
 }

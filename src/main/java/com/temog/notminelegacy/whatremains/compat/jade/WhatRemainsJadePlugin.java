@@ -88,7 +88,10 @@ public final class WhatRemainsJadePlugin implements IWailaPlugin {
                             Component.translatable(decayStageKey(stage)))
                     .withStyle(decayStageColor(stage)));
 
-            int remaining = Math.max(0, DecayStage.getTotalLifespanTicks() - corpse.getCorpseAgeTicks());
+            // getFullLifespanTicks() (not getTotalLifespanTicks(), which only covers FRESH..
+            // ADVANCED_DECAY) -- a corpse can sit SKELETAL for a long time before it actually
+            // collapses, see DecayStage's own note on why the two are deliberately separate.
+            int remaining = Math.max(0, DecayStage.getFullLifespanTicks() - corpse.getCorpseAgeTicks());
             if (remaining <= 0) {
                 tooltip.add(Component.translatable("jade.whatremains.corpse.collapsing")
                         .withStyle(ChatFormatting.RED));

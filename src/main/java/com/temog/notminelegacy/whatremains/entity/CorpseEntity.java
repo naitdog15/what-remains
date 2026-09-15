@@ -52,6 +52,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ShovelItem;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.SkullBlockEntity;
@@ -2543,8 +2545,27 @@ public class CorpseEntity extends Mob implements Container {
         return ItemStack.EMPTY;
     }
 
+    /**
+     * True when {@code index} is an armor slot (0-3) currently holding a Curse of Binding item and
+     * the lock is enabled — refusing extraction here (not just in {@code CorpseMenu}'s {@code Slot#
+     * mayPickup}) closes the hopper path: this class implements plain {@link Container}, and
+     * {@code HopperBlockEntity#getContainerAt} falls back to any nearby {@code Container}-
+     * implementing entity when there's no block container to pull from, which reaches straight into
+     * {@link #removeItem}/{@link #removeItemNoUpdate} without ever going through a {@code Slot} or
+     * this entity's GUI menu at all. Deliberately NOT consulted by {@link #dropAllItems()} — that
+     * method writes directly to {@link #inventory} rather than calling either of these, which is
+     * exactly why burying/decaying/collapsing the corpse still frees a bound piece.
+     */
+    private boolean isCorpseBoundArmorSlot(int index) {
+        if (!WhatRemainsConfig.enableCurseOfBindingLocksToCorpse) return false;
+        if (index < 0 || index >= ARMOR_SLOTS) return false;
+        return EnchantmentHelper.getItemEnchantmentLevel(Enchantments.BINDING_CURSE, inventory.get(index)) > 0;
+    }
+
     @Override
     public ItemStack removeItem(int index, int count) {
+        if (isCorpseBoundArmorSlot(index)) return ItemStack.EMPTY;
+
         NonNullList<ItemStack> list;
         int li;
         if (index >= 0 && index < BASE_SLOTS) { list = inventory; li = index; }
@@ -2568,6 +2589,8 @@ public class CorpseEntity extends Mob implements Container {
 
     @Override
     public ItemStack removeItemNoUpdate(int index) {
+        if (isCorpseBoundArmorSlot(index)) return ItemStack.EMPTY;
+
         if (index >= 0 && index < BASE_SLOTS) {
             ItemStack stack = inventory.get(index);
             inventory.set(index, ItemStack.EMPTY);

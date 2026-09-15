@@ -2,6 +2,7 @@ package com.temog.notminelegacy.whatremains;
 
 import com.mojang.logging.LogUtils;
 import com.temog.notminelegacy.whatremains.environment.CorpseEnvironmentLoader;
+import com.temog.notminelegacy.whatremains.registry.WREnchantments;
 import com.temog.notminelegacy.whatremains.registry.WREntities;
 import com.temog.notminelegacy.whatremains.registry.WRItems;
 import com.temog.notminelegacy.whatremains.registry.WRMenus;
@@ -40,6 +41,7 @@ public class WhatRemains {
         WREntities.register(modEventBus);
         WRItems.register(modEventBus);
         WRMenus.register(modEventBus);
+        WREnchantments.register(modEventBus);
 
         MinecraftForge.EVENT_BUS.register(this);
 
