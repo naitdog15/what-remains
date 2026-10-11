@@ -49,16 +49,5 @@ versionRange="[11,)"
 ordering="AFTER"
 side="CLIENT"
 
-# DungeonNowLoading Great Bottle o' Enchanting integration. DNL is reflection-only at compile
-# time, but the two @Pseudo mixins are exact-ABI patches against release 2.2. The metadata range
-# and WhatRemainsMixinPlugin's independent early version gate deliberately refuse an unreviewed
-# DNL update instead of risking a required-mixin classload crash.
-[[dependencies.whatremains]]
-modId="dungeonnowloading"
-mandatory=false
-versionRange="[2.2,2.3)"
-ordering="AFTER"
-side="BOTH"
-
 [[mixins]]
 config="whatremains.mixins.json"

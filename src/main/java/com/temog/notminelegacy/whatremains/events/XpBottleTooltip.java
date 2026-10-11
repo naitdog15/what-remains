@@ -1,14 +1,11 @@
 package com.temog.notminelegacy.whatremains.events;
 
-import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemains;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
-import com.temog.notminelegacy.whatremains.compat.dnl.DnlGreatBottleBridge;
 import com.temog.notminelegacy.whatremains.xp.XpVessel;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -42,34 +39,13 @@ public final class XpBottleTooltip {
     /** V2: the badge-explaining level-equivalent line, shown under {@link #STORED_KEY}. */
     private static final String STORED_LEVEL_KEY = "whatremains.xp_vessel.stored_level";
 
-    /**
-     * DNL's own {@code GreatExperienceBottleItem#appendHoverText} unconditionally prints
-     * {@code "%d XP"} using its construction-time fixed 100 figure — stale the instant the bridge
-     * takes over the item's real economy (XPB-04). No DNL class reference: matched purely by the
-     * translation key string on the already-populated tooltip list.
-     */
-    private static final String DNL_NATIVE_TOOLTIP_KEY = "item.dungeonnowloading.great_experience_bottle.tooltip";
-
     @SubscribeEvent
     public static void onItemTooltip(ItemTooltipEvent event) {
         ItemStack stack = event.getItemStack();
         boolean isNormalBottle = XpVessel.isXpBottle(stack);
-        boolean isGreatBottle = !isNormalBottle && XpVessel.isGreatBottle(stack);
-        if (!isNormalBottle && !isGreatBottle) return;
+        if (!isNormalBottle) return;
 
-        boolean bridgeActive = isGreatBottle && DnlGreatBottleBridge.isActive();
-        if (bridgeActive) {
-            // Runs independent of the tooltip GATE below and of whether stored > 0 — the DNL line
-            // is wrong information the moment the bridge is active, regardless of whether our own
-            // lines end up showing. Master switch off leaves DNL's native line exactly as it ships.
-            event.getToolTip().removeIf(component ->
-                    component.getContents() instanceof TranslatableContents translatable
-                            && DNL_NATIVE_TOOLTIP_KEY.equals(translatable.getKey()));
-        }
-
-        boolean active = isGreatBottle
-                ? bridgeActive && GreatBottleConfig.greatBottleTooltip
-                : XpVessel.enabled() && WhatRemainsConfig.xpBottleTooltip;
+        boolean active = XpVessel.enabled() && WhatRemainsConfig.xpBottleTooltip;
         if (!active) return;
 
         int stored = XpVessel.getStoredXp(stack);

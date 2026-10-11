@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains;
 
+import com.temog.notminelegacy.xp.XpMath;
 import java.util.List;
 
 import com.mojang.logging.LogUtils;
@@ -987,7 +988,7 @@ public final class WhatRemainsConfig {
             // own comment above.
             if (xpBottleEnabled) {
                 LOGGER.info("[WhatRemains] XP vessel: ENABLED (capacity level {} = {} XP, stacks empty {} / stored (any value) {})",
-                        xpBottleCapacityLevels, XpVessel.experienceForLevel(xpBottleCapacityLevels),
+                        xpBottleCapacityLevels, XpMath.experienceForLevel(xpBottleCapacityLevels),
                         xpBottleEmptyStackSize, xpBottleFullStackSize);
             } else {
                 LOGGER.info("[WhatRemains] XP vessel: DISABLED (vanilla bottles)");

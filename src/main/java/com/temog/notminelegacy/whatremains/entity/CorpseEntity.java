@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.entity;
 
+import com.temog.notminelegacy.xp.XpMath;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -63,9 +64,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
-import com.temog.notminelegacy.whatremains.environment.CorpseEnvironment;
+import com.temog.notminelegacy.environment.EnvironmentSample;
+import com.temog.notminelegacy.environment.EnvironmentSampler;
 import com.temog.notminelegacy.whatremains.environment.CorpseEnvironmentLoader;
-import com.temog.notminelegacy.whatremains.environment.CorpseEnvironmentSampler;
 import com.temog.notminelegacy.whatremains.environment.CorpseEnvironmentSpec;
 import com.temog.notminelegacy.whatremains.menu.CorpseMenu;
 import com.temog.notminelegacy.whatremains.xp.XpVessel;
@@ -1128,7 +1129,7 @@ public class CorpseEntity extends Mob implements Container {
         int recovered = XpVessel.rollCorpseDestructionRecovery(stored, deathLevel, this.random);
         if (recovered <= 0) return;
 
-        int[] chunks = XpVessel.canonicalPartition(recovered);
+        int[] chunks = XpMath.canonicalPartition(recovered);
         XpVessel.spawnOrbsAt((net.minecraft.server.level.ServerLevel) level(), position(), chunks);
     }
 
@@ -1498,7 +1499,10 @@ public class CorpseEntity extends Mob implements Container {
      * created on different ticks), so no separate cross-entity staggering scheme is needed here.
      */
     private void updateEnvironmentalExposure() {
-        CorpseEnvironment env = CorpseEnvironmentSampler.sample(this);
+        // Entity state, not block state: isOnFire() honours fireImmune() and is the vanilla flame-overlay
+        // predicate. Server-only call site (runs inside the !isClientSide branch), so it reads the
+        // authoritative remainingFireTicks, never the client shared flag.
+        EnvironmentSample env = EnvironmentSampler.sample(level(), blockPosition(), isOnFire(), getCorpseAgeTicks());
 
         setCharLevel(nextTrackerLevel(CorpseEnvironmentSpec.TRACKER_CHAR, env, getCharLevel(), true));
         setFrostLevel(nextTrackerLevel(CorpseEnvironmentSpec.TRACKER_FROST, env, getFrostLevel(), false));
@@ -1520,7 +1524,7 @@ public class CorpseEntity extends Mob implements Container {
      * never resetting (see the field's own javadoc). Harmless no-op for a corpse that has never
      * matched anything on this tracker yet — the field simply stays at its {@code ""} default.
      */
-    private void updateResolvedStyle(EntityDataAccessor<String> styleAccessor, String tracker, CorpseEnvironment env) {
+    private void updateResolvedStyle(EntityDataAccessor<String> styleAccessor, String tracker, EnvironmentSample env) {
         String resolved = CorpseEnvironmentLoader.resolveStyleKey(tracker, env);
         if (!resolved.isEmpty()) {
             this.entityData.set(styleAccessor, resolved);
@@ -1540,7 +1544,7 @@ public class CorpseEntity extends Mob implements Container {
      * {@code CorpseEnvironmentLoader} already enforces loader-side by forcing every char-feeding
      * spec's {@code decay_rate} to {@code 0.0}. Neither enforcement point relies on the other.
      */
-    private static float nextTrackerLevel(String tracker, CorpseEnvironment env, float current, boolean oneWay) {
+    private static float nextTrackerLevel(String tracker, EnvironmentSample env, float current, boolean oneWay) {
         boolean anyMatch = false;
         double accumulateRate = 0.0;
         double decayRate = 0.0;
@@ -1572,7 +1576,7 @@ public class CorpseEntity extends Mob implements Container {
      * as their common endpoint, so they meet at exactly {@code 1.0x} with no discontinuity when
      * {@code biomeTemperature == decayNeutralTemperature}.
      */
-    private static float computeDecayRateMultiplier(CorpseEnvironment env) {
+    private static float computeDecayRateMultiplier(EnvironmentSample env) {
         double neutral = WhatRemainsConfig.decayNeutralTemperature;
         double coldRef = WhatRemainsConfig.decayColdReferenceTemperature;
         double coldMult = WhatRemainsConfig.decayColdRateMultiplier;

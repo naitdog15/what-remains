@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.mixin;
 
+import com.temog.notminelegacy.xp.XpMath;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
 import com.temog.notminelegacy.whatremains.events.XpBottlePayoutReconciler;
 import com.temog.notminelegacy.whatremains.network.ServerboundXpBottleGesture;
@@ -110,12 +111,12 @@ public abstract class ThrownExperienceBottleMixin {
     @Unique
     private static int[] whatremains$resolveXp(ItemStack carried, RandomSource random) {
         if (!WhatRemainsConfig.xpBottleThrowPaysStoredXp) {
-            return XpVessel.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
+            return XpMath.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
         }
 
         CompoundTag tag = carried.getTag();
         if (tag == null) {
-            return XpVessel.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
+            return XpMath.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
         }
         if (tag.getBoolean(ServerboundXpBottleGesture.TAG_RESOLVED)) return XpVessel.getOrbManifest(carried);
         // A tag that carries no claim at all (a renamed bottle, say) is still unresolved — treating
@@ -123,7 +124,7 @@ public abstract class ThrownExperienceBottleMixin {
         // either one alone is still evidence of a real claim (a legacy/forged stack could in theory
         // carry StoredOrbs without StoredXp, or vice versa).
         if (!tag.contains(XpVessel.TAG_STORED) && !tag.contains(XpVessel.TAG_ORBS)) {
-            return XpVessel.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
+            return XpMath.partitionIntoOrbs(XpVessel.rollUnresolvedThrowXp(random), random);
         }
         return XpVessel.getOrbManifest(carried);
     }

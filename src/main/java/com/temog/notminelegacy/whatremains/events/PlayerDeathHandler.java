@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.events;
 
+import com.temog.notminelegacy.xp.XpMath;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -211,7 +212,7 @@ public final class PlayerDeathHandler {
         // luck attribute at the moment of death. Whatever doesn't survive is destroyed outright,
         // never written anywhere. The player's own live XP is untouched by this call either way --
         // vanilla already zeroes it on death whenever keepInventory is false (the early return above).
-        long totalXp = XpVessel.playerTotalXp(player);
+        long totalXp = XpMath.playerTotalXp(player);
         int recovered = XpVessel.rollDeathRecovery(totalXp, player.experienceLevel, player.getLuck(), player.getRandom());
         corpse.setStoredXp(recovered);
         // Persisted so a later corpse-destruction payout roll (XpVessel#rollCorpseDestructionRecovery)

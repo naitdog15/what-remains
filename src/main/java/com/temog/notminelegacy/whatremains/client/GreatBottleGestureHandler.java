@@ -21,7 +21,6 @@ import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 
 /**
@@ -44,8 +43,6 @@ import net.minecraftforge.fml.common.Mod;
 @Mod.EventBusSubscriber(modid = WhatRemains.MODID, value = Dist.CLIENT)
 public final class GreatBottleGestureHandler {
 
-    private static final String DNL_MODID = "dungeonnowloading";
-
     private GreatBottleGestureHandler() {}
 
     private static long armedAtGameTime = Long.MIN_VALUE;
@@ -54,15 +51,10 @@ public final class GreatBottleGestureHandler {
     private static boolean releasedSinceArm;
 
     private static boolean bridgeActive() {
-        if (!ModList.get().isLoaded(DNL_MODID)) return false;
-        // Client fail-safe: a SERVER-type spec that has not yet been synced (e.g. the narrow login
-        // window before ConfigSync bakes the server's actual value in) must resolve to "inactive",
-        // never fall back to the compiled default. A missed gesture this frame is harmless — it is
-        // simply retried on the next click — but wrongly cancelling input here while the real
-        // (possibly disabled) state hasn't landed yet risks eating a click that should have reached
-        // DNL's own unlocked use().
-        if (!GreatBottleConfig.SPEC.isLoaded()) return false;
-        return GreatBottleConfig.greatBottleEnabled;
+        // The DungeonNowLoading Great Bottle integration now lives in Building Bridges and the
+        // server half of this gesture is no longer handled in WhatRemains, so this client half
+        // stays inert rather than cancelling clicks the server would ignore.
+        return false;
     }
 
     /** How long (in client ticks) an armed first click stays live — config-driven, only consulted

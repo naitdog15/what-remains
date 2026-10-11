@@ -7,7 +7,6 @@ import java.util.function.Supplier;
 
 import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemains;
-import com.temog.notminelegacy.whatremains.compat.dnl.DnlGreatBottleBridge;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -31,14 +30,11 @@ import net.minecraftforge.network.NetworkEvent;
  * validation discipline (live hand/slot/item re-derived from server state, a rate limit keyed by
  * player UUID) so the two features read as one design, not two independently-invented ones.
  *
- * <p>Every call into {@link DnlGreatBottleBridge} below happens only after
- * {@link #validateAndRun} confirms DungeonNowLoading is loaded; WhatRemains owns this packet and
- * is therefore already present.
+ * <p>The server-side Great Bottle action is no longer handled in WhatRemains; see
+ * {@link #validateAndRun}.
  */
 @Mod.EventBusSubscriber(modid = WhatRemains.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class GreatBottleGesturePacket {
-
-    private static final String DNL_MODID = "dungeonnowloading";
 
     private static final Map<UUID, Long> LAST_ACCEPTED_GAME_TIME = new ConcurrentHashMap<>();
 
@@ -52,7 +48,7 @@ public final class GreatBottleGesturePacket {
          * (V2.1 orb vacuum) — pulls those orbs into the bottle instead of draining the player's own
          * XP bar. The client only ever sends this in place of {@code DEPOSIT} for a not-yet-full
          * bottle: a FULL bottle sends {@code DEPOSIT} so the server can reject it (see {@code
-         * GreatBottleGestureHandler}), and {@code DnlGreatBottleBridge#handleVacuum} refuses a full
+         * GreatBottleGestureHandler}), and the handler refuses a full
          * bottle as its own belt-and-braces copy of that same rule.
          */
         VACUUM
@@ -97,42 +93,12 @@ public final class GreatBottleGesturePacket {
     }
 
     /**
-     * Re-derives every precondition from live server state, exactly like
-     * {@code ServerboundXpBottleGesture#validateAndRun} does for the vanilla bottle. The
-     * {@code ModList} gate runs BEFORE anything touches {@link DnlGreatBottleBridge} — see class
-     * javadoc.
+     * Server-side handling for the Great Bottle gesture. The DungeonNowLoading integration that
+     * used to act on these requests now lives in Building Bridges, and WhatRemains must not depend
+     * on it, so a received request is accepted off the wire and then ignored here.
      */
     private static void validateAndRun(GreatBottleGesturePacket message, ServerPlayer player) {
-        if (player == null || message.action == null || message.hand == null) return;
-        if (!ModList.get().isLoaded(DNL_MODID)) return;
-        if (player.isRemoved() || !player.isAlive() || player.isSpectator()) return;
-        // Master-off: DnlGreatBottleBridge#handleDeposit/handleThrow would reject this anyway (each
-        // re-checks isActive() itself), but bailing here also skips touching the rate-limit map for
-        // a gesture that can never do anything while the bridge is switched off.
-        if (!DnlGreatBottleBridge.isActive()) return;
-
-        long now = player.level().getGameTime();
-        Long lastAccepted = LAST_ACCEPTED_GAME_TIME.get(player.getUUID());
-        if (lastAccepted != null
-                && now - lastAccepted < GreatBottleConfig.greatBottleGestureRateLimitTicks) return;
-
-        boolean accepted = switch (message.action) {
-            // A deposit is only ever produced by a sneaking press — an un-sneaked DEPOSIT is a
-            // malformed request, mirroring ServerboundXpBottleGesture's own rule.
-            case DEPOSIT -> message.sneaking
-                    && DnlGreatBottleBridge.handleDeposit(player, message.hand, message.slot);
-            case THROW -> DnlGreatBottleBridge.handleThrow(player, message.hand, message.slot);
-            // Same sneaking requirement as DEPOSIT (V2.1 orb vacuum) — VACUUM is a sneak-gesture
-            // variant of it, never a standalone click, so an un-sneaked one is equally malformed.
-            case VACUUM -> message.sneaking
-                    && DnlGreatBottleBridge.handleVacuum(player, message.hand, message.slot);
-        };
-
-        // Only an ACCEPTED gesture updates the timestamp — a rejected one must not itself become a
-        // spam-pacing signal (same rule as the vanilla bottle's rate limit).
-        if (accepted) {
-            LAST_ACCEPTED_GAME_TIME.put(player.getUUID(), now);
-        }
+        // Intentionally empty: no WhatRemains-side action for the Great Bottle gesture.
     }
 
     /** Drops the departing player's rate-limit entry rather than let the UUID linger for the rest

@@ -1,8 +1,6 @@
 package com.temog.notminelegacy.whatremains.mixin;
 
-import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
-import com.temog.notminelegacy.whatremains.compat.dnl.DnlGreatBottleBridge;
 import com.temog.notminelegacy.whatremains.xp.XpVessel;
 
 import net.minecraft.world.item.Item;
@@ -42,9 +40,6 @@ public abstract class ItemBarMixin {
     private static boolean whatremains$barEnabled(ItemStack stack) {
         if (XpVessel.isXpBottle(stack)) {
             return XpVessel.enabled() && WhatRemainsConfig.xpBottleFillBar;
-        }
-        if (XpVessel.isGreatBottle(stack)) {
-            return DnlGreatBottleBridge.isActive() && GreatBottleConfig.greatBottleFillBar;
         }
         return false;
     }

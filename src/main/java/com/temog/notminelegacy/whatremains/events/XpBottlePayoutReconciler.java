@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.events;
 
+import com.temog.notminelegacy.xp.XpMath;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,7 +75,7 @@ public final class XpBottlePayoutReconciler {
         // remove(key, value) so a pickup landing this same tick re-arms rather than being dropped.
         if (!PENDING_DUE_TICK.remove(player.getUUID(), dueTick)) return;
         if (player.isRemoved()) return;
-        XpVessel.reconcilePlayerXp(player);
+        XpMath.reconcilePlayerXp(player);
     }
 
     /** Drops the departing player's pending entry rather than letting the UUID linger. */

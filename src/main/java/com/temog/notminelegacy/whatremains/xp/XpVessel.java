@@ -1,8 +1,11 @@
 package com.temog.notminelegacy.whatremains.xp;
 
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+
+import static com.temog.notminelegacy.xp.XpMath.*;
+
+import com.temog.notminelegacy.xp.XpMath;
 
 import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
@@ -12,7 +15,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.network.protocol.game.ClientboundSetExperiencePacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -112,45 +114,6 @@ public final class XpVessel {
     public static final String TAG_ORBS = "StoredOrbs";
 
     /**
-     * Vanilla's own experience-orb tier table, ascending — the values
-     * {@code ExperienceOrb#getExperienceValue} splits a lump sum into. Drawing every chunk from
-     * this list is what guarantees no chunk is ever a "mega-orb" Mending amplifier (plan D8).
-     * <p>
-     * Public because the Great Bottle bridge and the payout mixins read it; treat it as immutable.
-     */
-    public static final int[] ORB_LADDER = {1, 3, 7, 17, 37, 73, 149, 307, 617, 1237, 2477};
-
-    /**
-     * Hard ceiling on manifest length. Bounds NBT size and, more importantly, pickup time: vanilla
-     * gives each orb a 2-tick {@code takeXpDelay}, so a hundred-chunk payout would trickle in over
-     * seconds instead of landing at once.
-     */
-    public static final int MAX_CHUNKS = 32;
-
-    /**
-     * Chunk count {@link #partitionIntoOrbs(int, RandomSource)} aims for. Not a limit —
-     * {@link #MAX_CHUNKS} is the limit — just the pace the randomiser keeps, so a payout lands in
-     * roughly a third of a second rather than dribbling out orb by orb. Measured against the shipped
-     * capacities: a full level-25 vessel averages ~6 orbs, a full level-100 Great Bottle ~12 (which
-     * is what the ladder's top rung forces anyway).
-     */
-    private static final int SOFT_CHUNK_TARGET = 6;
-
-    /** Largest legal single-orb value — the top rung of {@link #ORB_LADDER}. */
-    private static final int MAX_ORB_VALUE = ORB_LADDER[ORB_LADDER.length - 1];
-
-    /**
-     * Fill-stage bucket count (XPB-07), matching the 8 fill-stage item-model overrides
-     * ({@code xp_bottle_0..7.json}, predicate thresholds 0.0000001/0.125/.../0.875). Orb-manifest
-     * generation is biased by this same bucketing — see {@link #fillStageFor} — so a bottle's
-     * throw-shatter pattern always visually agrees with the fill texture it's showing.
-     */
-    private static final int FILL_STAGE_COUNT = 8;
-
-    /** Shared empty manifest; handed out rather than allocating a zero-length array per call. */
-    private static final int[] NO_CHUNKS = new int[0];
-
-    /**
      * Fallback capacity, in LEVELS, used before the config has baked (and if it ever bakes
      * non-positive). Matches the shipped default of {@code xpBottleCapacityLevels}.
      */
@@ -162,25 +125,18 @@ public final class XpVessel {
     /** Fallback stack size for full bottles, used only before the config has baked. */
     private static final int DEFAULT_FULL_STACK_SIZE = 16;
 
-    /**
-     * Slack allowed when flooring a measured XP delta. Vanilla stores the XP bar as a {@code float},
-     * so a difference of two samples carries a little noise; this is far below one XP point but well
-     * above that noise, which keeps the floor from quietly eating a point every deposit.
-     */
-    private static final double ROUNDING_EPSILON = 1.0E-3D;
+    // Thin forwards to the core XP math, kept because Building Bridges' Great Bottle bridge still
+    // calls them through XpVessel. Remove once BB calls XpMath directly.
+    public static final int[] ORB_LADDER = XpMath.ORB_LADDER;
+    public static final int MAX_CHUNKS = XpMath.MAX_CHUNKS;
 
-    /**
-     * Maximum distance from an integer XP total that is treated as float boundary noise. This is
-     * far below one XP point, but comfortably above the drift produced by vanilla's repeated
-     * {@code float} additions and level-peeling divisions.
-     */
-    private static final double SNAP_EPSILON = 0.01D;
+    public static int[] partitionIntoOrbs(int total, RandomSource random) {
+        return XpMath.partitionIntoOrbs(total, random);
+    }
 
-    /** Highest level whose cumulative curve is evaluated exactly by {@link #experienceForLevel}. */
-    private static final int MAX_EXACT_CURVE_LEVEL = 1_000_000_000;
-
-    /** Exact integer level plus the representable vanilla bar progress within that level. */
-    public record LevelAndProgress(int level, float progress) {}
+    public static long playerTotalXp(Player player) {
+        return XpMath.playerTotalXp(player);
+    }
 
     // ── Item identity ───────────────────────────────────────────────────────
 
@@ -382,11 +338,7 @@ public final class XpVessel {
      * level as it does from zero.
      */
     public static int marginalLevelsFor(Player player, ItemStack stack) {
-        int stored = getStoredXp(stack);
-        if (stored <= 0 || player == null) return 0;
-        long combined = saturatedAdd(playerTotalXp(player), (long) stored);
-        int projectedLevel = levelAndProgressForExperience(combined).level();
-        return Math.max(0, projectedLevel - player.experienceLevel);
+        return marginalLevels(player, getStoredXp(stack));
     }
 
     /** True when this bottle holds some XP but is not full. */
@@ -474,116 +426,6 @@ public final class XpVessel {
     // ── Orb manifest (the ladder partitions) ────────────────────────────────
 
     /**
-     * Deterministic greedy decomposition of {@code total} over {@link #ORB_LADDER}: repeatedly take
-     * the largest rung that still fits. Always terminates exactly, because the ladder contains 1.
-     * <p>
-     * Deterministic <em>is</em> the point — this is what a full bottle's manifest is written from,
-     * so two independently filled full bottles produce identical NBT and still stack (class
-     * javadoc, rule 2). It is also the reference partition every other path is measured against.
-     *
-     * @return one entry per orb, largest first; empty for a non-positive total
-     */
-    public static int[] canonicalPartition(int total) {
-        if (total <= 0) return NO_CHUNKS;
-
-        int[] picked = new int[MAX_CHUNKS];
-        int count = 0;
-        int remaining = total;
-        while (remaining > 0 && count < MAX_CHUNKS) {
-            int rung = highestRungAtMost(remaining);
-            if (rung < 0) break; // unreachable: rung 1 fits any positive remainder
-            picked[count++] = rung;
-            remaining -= rung;
-        }
-        // A remainder here means the total is larger than MAX_CHUNKS orbs can express (only
-        // reachable at a capacity configured far above the shipped 25/100 levels). Paying the
-        // expressible part and dropping the tail is the safe direction: never mint, only underpay.
-        return Arrays.copyOf(picked, count);
-    }
-
-    /**
-     * Randomised decomposition of {@code total} over {@link #ORB_LADDER} — the same guarantees as
-     * {@link #canonicalPartition(int)} (legal orb values only, sums exactly, at most
-     * {@link #MAX_CHUNKS} entries) but with a varied shape, so two payouts of the same amount
-     * do not spray an identical orb pattern every time.
-     * <p>
-     * Rungs are drawn from the top three that still fit, minus any that would fall behind the pace
-     * needed to finish inside {@link #SOFT_CHUNK_TARGET} orbs — variety is worth having, but not at
-     * the price of a payout that trickles in two ticks at a time. As the hard chunk budget runs down
-     * the largest fitting rung is forced, so the loop always finishes inside the cap. If either
-     * invariant would break anyway the canonical partition is returned instead — a deterministic
-     * shape is a cosmetic loss, a mis-summing manifest is an economy bug.
-     *
-     * @param random may be null, in which case the canonical partition is returned
-     */
-    public static int[] partitionIntoOrbs(int total, RandomSource random) {
-        if (total <= 0) return NO_CHUNKS;
-
-        int[] canonical = canonicalPartition(total);
-        if (random == null) return canonical;
-
-        // The canonical sum, not `total`, is the target: at an over-large capacity the ladder
-        // cannot express the whole amount within MAX_CHUNKS, and both partitioners must agree on
-        // what they pay so getOrbManifest does not see a permanent disagreement and re-roll forever.
-        int target = sumOf(canonical);
-        if (target <= 0) return canonical;
-
-        int[] picked = new int[MAX_CHUNKS];
-        int count = 0;
-        int remaining = target;
-        while (remaining > 0 && count < MAX_CHUNKS) {
-            int highest = highestRungIndexAtMost(remaining);
-            if (highest < 0) break; // unreachable: rung 1 fits any positive remainder
-
-            // Smallest rung that still keeps the payout on pace for SOFT_CHUNK_TARGET orbs.
-            int pace = Math.max(1, SOFT_CHUNK_TARGET - count);
-            int minimum = (remaining + pace - 1) / pace;
-
-            int lowest = highest; // the ladder ascends, so the first match is the lowest one
-            for (int i = Math.max(0, highest - 2); i < highest; i++) {
-                if (ORB_LADDER[i] >= minimum) { lowest = i; break; }
-            }
-
-            int chosen = lowest + random.nextInt(highest - lowest + 1);
-            // Out of room: only the largest fitting rung can still close the total.
-            int budget = MAX_CHUNKS - count - 1; // orbs left AFTER the one about to be taken
-            if (!fitsInBudget(remaining - ORB_LADDER[chosen], budget)) chosen = highest;
-
-            picked[count++] = ORB_LADDER[chosen];
-            remaining -= ORB_LADDER[chosen];
-        }
-
-        if (remaining != 0 || count > MAX_CHUNKS) return canonical;
-        return Arrays.copyOf(picked, count);
-    }
-
-    /**
-     * The E-08 gate: sanitises a manifest that came off NBT (i.e. from anywhere a player or an op
-     * with {@code /data} could have reached). Non-positive entries are dropped, every entry is
-     * clamped to a legal single-orb value, the list stops the moment its running sum would exceed
-     * {@code cap}, and the entry count is capped at {@link #MAX_CHUNKS}.
-     * <p>
-     * Every read of {@value #TAG_ORBS} goes through here — {@code tag.getIntArray(TAG_ORBS)} must
-     * never be consumed raw anywhere in the codebase.
-     */
-    public static int[] normalizeChunks(int[] raw, int cap) {
-        if (raw == null || raw.length == 0 || cap <= 0) return NO_CHUNKS;
-
-        int[] kept = new int[Math.min(raw.length, MAX_CHUNKS)];
-        int count = 0;
-        long sum = 0L;
-        for (int value : raw) {
-            if (count >= MAX_CHUNKS) break;
-            if (value <= 0) continue;
-            int chunk = Math.min(value, MAX_ORB_VALUE);
-            if (sum + chunk > cap) break; // running sum reached capacity — the rest is fabricated
-            kept[count++] = chunk;
-            sum += chunk;
-        }
-        return count == kept.length ? kept : Arrays.copyOf(kept, count);
-    }
-
-    /**
      * The orb manifest for this vessel — <b>always</b> normalised, and always a partition of the
      * scalar. Regenerated from {@value #TAG_STORED} whenever the stored list is absent, empty, or
      * sums to something the scalar disagrees with; a legacy stack that predates the manifest and a
@@ -639,122 +481,6 @@ public final class XpVessel {
         writeManifest(tag, normalized);
     }
 
-    /** Highest ladder value that fits in {@code remaining}, or -1 when nothing does. */
-    private static int highestRungAtMost(int remaining) {
-        int index = highestRungIndexAtMost(remaining);
-        return index < 0 ? -1 : ORB_LADDER[index];
-    }
-
-    /** Index into {@link #ORB_LADDER} of the highest value that fits, or -1 when nothing does. */
-    private static int highestRungIndexAtMost(int remaining) {
-        for (int i = ORB_LADDER.length - 1; i >= 0; i--) {
-            if (ORB_LADDER[i] <= remaining) return i;
-        }
-        return -1;
-    }
-
-    /** True when {@code remaining} could still be paid off by {@code budget} more orbs. */
-    private static boolean fitsInBudget(int remaining, int budget) {
-        if (remaining <= 0) return true;
-        return (long) remaining <= (long) budget * MAX_ORB_VALUE;
-    }
-
-    /**
-     * What a manifest for {@code total} is expected to sum to. Normally {@code total} itself; less
-     * only where the ladder cannot express the total within {@link #MAX_CHUNKS} (see the class
-     * javadoc). Derived from the canonical partition so every partition path agrees on one number.
-     */
-    private static int expectedManifestSum(int total) {
-        return sumOf(canonicalPartition(total));
-    }
-
-    /**
-     * The manifest a vessel holding {@code stored} should carry: always {@link #stagePartition}
-     * (XPB-07), clamped to {@code cap} defensively even though every caller already clamps
-     * {@code stored} itself. Unlike {@link #partitionIntoOrbs} (still used for the separate
-     * unresolved-throw roll, which has no stacking concern), this must never vary between calls for
-     * the same {@code (stored, cap)} pair — that determinism is what lets two independently filled
-     * bottles of the same amount carry byte-identical NBT and stack together ({@link #maxStackFor}).
-     */
-    private static int[] regenerateManifest(int stored, int cap) {
-        int clamped = Math.min(stored, cap);
-        return stagePartition(clamped, fillStageFor(clamped, cap));
-    }
-
-    /**
-     * Fill-stage bucket (0..{@link #FILL_STAGE_COUNT}-1) for {@code stored} XP out of {@code cap}.
-     * Only ever called with {@code stored > 0} (both call sites already guard that), so this never
-     * needs to special-case the "empty" state the way the item-model predicate does with its
-     * near-zero first threshold — any positive fraction buckets the same way {@code floor} would.
-     */
-    private static int fillStageFor(int stored, int cap) {
-        if (cap <= 0) return 0;
-        float fraction = Mth.clamp((float) stored / (float) cap, 0.0F, 1.0F);
-        return Mth.clamp((int) (fraction * FILL_STAGE_COUNT), 0, FILL_STAGE_COUNT - 1);
-    }
-
-    /**
-     * Deterministic decomposition of {@code total} over {@link #ORB_LADDER}, biased by fill
-     * {@code stage} (0..{@link #FILL_STAGE_COUNT}-1, see {@link #fillStageFor}) instead of
-     * randomised (XPB-07 design pass): a low stage prefers the smallest rung that still keeps pace,
-     * a high stage prefers the largest, so a barely-filled bottle shatters into small, calm orbs and
-     * a nearly-full one scatters across the whole ladder — while staying fully deterministic (same
-     * total + same stage always produce the same manifest), which same-value stacking depends on.
-     * <p>
-     * Structurally this is {@link #partitionIntoOrbs}'s exact pacing/hard-budget algorithm with the
-     * stage bias standing in for that method's {@code random.nextInt} pick — including the same
-     * safety property: {@code fitsInBudget} still forces the largest fitting rung whenever the
-     * chunk budget is running out, so the loop can never fail to finish within {@link #MAX_CHUNKS}
-     * for any total {@link #canonicalPartition} itself could express. The fallback below exists only
-     * for the same already-documented extreme case that method has (a capacity configured far
-     * beyond {@code MAX_CHUNKS * 2477}) — this must degrade to the exact same "pay the largest
-     * expressible amount" behaviour {@code canonicalPartition} already has, not invent a stricter or
-     * looser one, since {@link #expectedManifestSum} is defined in terms of it.
-     * <p>
-     * At {@code stage == FILL_STAGE_COUNT - 1} the bias resolves to "always pick {@code highest}" —
-     * i.e. plain greedy — making this provably identical to {@link #canonicalPartition(int)} for a
-     * full bottle, so {@link #setOrbManifest}'s own explicit canonical-at-capacity branch needed no
-     * change to stay consistent with what a stage-7 {@code regenerateManifest} call would produce.
-     */
-    private static int[] stagePartition(int total, int stage) {
-        if (total <= 0) return NO_CHUNKS;
-
-        int[] picked = new int[MAX_CHUNKS];
-        int count = 0;
-        int remaining = total;
-        while (remaining > 0 && count < MAX_CHUNKS) {
-            int highest = highestRungIndexAtMost(remaining);
-            if (highest < 0) break; // unreachable: rung 1 fits any positive remainder
-
-            // Smallest rung that still keeps the payout on pace for SOFT_CHUNK_TARGET orbs.
-            int pace = Math.max(1, SOFT_CHUNK_TARGET - count);
-            int minimum = (remaining + pace - 1) / pace;
-
-            int lowest = highest; // the ladder ascends, so the first match is the lowest one
-            for (int i = Math.max(0, highest - 2); i < highest; i++) {
-                if (ORB_LADDER[i] >= minimum) { lowest = i; break; }
-            }
-
-            // Deterministic stand-in for partitionIntoOrbs' random.nextInt(highest - lowest + 1):
-            // stage 0 always takes `lowest` (calmest viable), the top stage always takes `highest`
-            // (most dramatic), stages between linearly interpolate across the eligible window.
-            int span = highest - lowest;
-            int chosen = span <= 0
-                    ? highest
-                    : Math.min(highest, lowest + Math.round(span * (stage / (float) (FILL_STAGE_COUNT - 1))));
-
-            // Out of room: only the largest fitting rung can still close the total.
-            int budget = MAX_CHUNKS - count - 1; // orbs left AFTER the one about to be taken
-            if (!fitsInBudget(remaining - ORB_LADDER[chosen], budget)) chosen = highest;
-
-            picked[count++] = ORB_LADDER[chosen];
-            remaining -= ORB_LADDER[chosen];
-        }
-
-        if (remaining != 0) return canonicalPartition(total);
-        return Arrays.copyOf(picked, count);
-    }
-
     /** Writes (or clears) the manifest key. Never leaves an empty array behind on the stack. */
     private static void writeManifest(CompoundTag tag, int[] chunks) {
         if (chunks == null || chunks.length == 0) {
@@ -764,157 +490,7 @@ public final class XpVessel {
         tag.putIntArray(TAG_ORBS, chunks);
     }
 
-    /** Sum of a manifest. Entries are already bounded, so the total cannot overflow an int. */
-    private static int sumOf(int[] chunks) {
-        if (chunks == null) return 0;
-        long sum = 0L;
-        for (int value : chunks) {
-            if (value > 0) sum += value;
-        }
-        return sum > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) sum;
-    }
-
     // ── Player XP accounting ────────────────────────────────────────────────
-
-    /**
-     * The player's current XP <b>balance</b>, derived from level + bar progress.
-     * <p>
-     * Never read {@code player.totalExperience}: it is a lifetime counter that enchanting spend is
-     * never subtracted from, so using it would print XP equal to everything the player has ever
-     * spent (plan D7). Arithmetic is saturating {@code long} because {@code /xp} can set levels far
-     * beyond what XP Tome's {@code int} formula survives.
-     */
-    public static long playerTotalXp(Player player) {
-        long forLevel = experienceForLevel(player.experienceLevel);
-        if (forLevel == Long.MAX_VALUE) return Long.MAX_VALUE;
-
-        float progress = Mth.clamp(player.experienceProgress, 0.0F, 1.0F);
-        long partial = (long) Math.floor(progress * player.getXpNeededForNextLevel());
-        return saturatedAdd(forLevel, Math.max(0L, partial));
-    }
-
-    /**
-     * Total XP required to reach {@code level} from zero — the exact arithmetic-progression sums
-     * vanilla uses, widened to {@code long} and saturating rather than overflowing.
-     */
-    public static long experienceForLevel(int level) {
-        if (level <= 0) return 0L;
-        // Beyond this the quadratic exceeds Long.MAX_VALUE; no reachable player is anywhere near it.
-        if (level > 1_000_000_000) return Long.MAX_VALUE;
-        if (level <= 15) return progressionSum(level, 7L, 2L);
-        if (level <= 30) return 315L + progressionSum(level - 15, 37L, 5L);
-        return 1395L + progressionSum(level - 30, 112L, 9L);
-    }
-
-    /**
-     * Exact inverse of {@link #experienceForLevel(int)} for a non-negative XP balance. The binary
-     * search finds the greatest whole level whose threshold does not exceed {@code totalXp}; the
-     * remainder is then divided by that level's exact vanilla XP step.
-     * <p>
-     * A nearest {@code float} quotient can multiply back to just below its integer remainder. When
-     * that happens it is advanced by one representable float so {@link #playerTotalXp(Player)}'s
-     * own floored readback returns the same integer total. Whole-level thresholds keep an exact
-     * {@code 0.0F} progress.
-     */
-    public static LevelAndProgress levelAndProgressForExperience(long totalXp) {
-        long target = Math.max(0L, totalXp);
-        int low = 0;
-        int high = MAX_EXACT_CURVE_LEVEL;
-        while (low < high) {
-            int middle = low + (high - low + 1) / 2;
-            if (experienceForLevel(middle) <= target) {
-                low = middle;
-            } else {
-                high = middle - 1;
-            }
-        }
-
-        int level = low;
-        long forLevel = experienceForLevel(level);
-        long remainder = target - forLevel;
-        if (remainder <= 0L) return new LevelAndProgress(level, 0.0F);
-
-        long needed = experienceForLevel(level + 1) - forLevel;
-        if (needed <= 0L) return new LevelAndProgress(level, 0.0F);
-
-        float progress = (float) remainder / (float) needed;
-        if ((long) Math.floor(progress * (float) needed) < remainder) {
-            progress = Math.nextUp(progress);
-        }
-        return new LevelAndProgress(level, progress);
-    }
-
-    /**
-     * Snaps only a near-integer float artefact in the player's own current XP balance. No payout
-     * amount or pre-transfer prediction participates: by the time this runs, XP consumed by
-     * Mending is already absent from the sampled balance and therefore cannot be restored.
-     */
-    public static void reconcilePlayerXp(Player player) {
-        double exact = playerTotalXpExact(player);
-        long target = Math.round(exact);
-        if (Math.abs(exact - target) > SNAP_EPSILON) return;
-        if (target == playerTotalXp(player)) return;
-
-        LevelAndProgress corrected = levelAndProgressForExperience(target);
-
-        // Enforce the epsilon bound on the RESULT, not just on the input. The inverse nudges its
-        // quotient with Math.nextUp so the floored readback cannot undercount, and one float ULP of
-        // progress is worth more than SNAP_EPSILON once `needed` grows large — past roughly level
-        // 18,600, reachable only via /xp but reachable. Checking the distance the write would
-        // actually move the balance is what turns "cannot mint or destroy" from an argument into a
-        // guarantee; a correction that cannot be applied within the bound is simply not applied.
-        if (!(corrected.progress() >= 0.0F) || corrected.progress() >= 1.0F) return;
-        double correctedExact = exactBalanceOf(corrected);
-        if (!Double.isFinite(correctedExact) || Math.abs(correctedExact - exact) > SNAP_EPSILON) return;
-
-        player.experienceLevel = corrected.level();
-        player.experienceProgress = corrected.progress();
-
-        // Force the resync by hand: ServerPlayer#tick only sends ClientboundSetExperiencePacket
-        // when totalExperience differs from lastSentExp, and that is the LIFETIME counter, which
-        // this correction deliberately never touches. Without this the server would hold the
-        // corrected level while the client HUD kept displaying the pre-correction one until some
-        // unrelated XP event happened to move totalExperience — i.e. the visible half of the bug
-        // this whole reconciliation exists to fix would still be on screen.
-        if (player instanceof ServerPlayer serverPlayer) {
-            serverPlayer.connection.send(new ClientboundSetExperiencePacket(
-                    serverPlayer.experienceProgress, serverPlayer.totalExperience,
-                    serverPlayer.experienceLevel));
-        }
-    }
-
-    /**
-     * The exact XP balance a {@link LevelAndProgress} pair represents — the same arithmetic
-     * {@link #playerTotalXpExact(Player)} performs on a live player, so the two are directly
-     * comparable. Used to check what a correction would really cost before writing it.
-     */
-    private static double exactBalanceOf(LevelAndProgress pair) {
-        long forLevel = experienceForLevel(pair.level());
-        long needed = experienceForLevel(pair.level() + 1) - forLevel;
-        if (needed <= 0L) return forLevel;
-        return forLevel + (double) pair.progress() * (double) needed;
-    }
-
-    /**
-     * The same balance, unfloored, for measuring how much XP a mutation actually moved. Only ever
-     * used as a difference of two samples taken moments apart, never stored.
-     */
-    private static double playerTotalXpExact(Player player) {
-        long forLevel = experienceForLevel(player.experienceLevel);
-        float progress = Mth.clamp(player.experienceProgress, 0.0F, 1.0F);
-        return forLevel + (double) progress * player.getXpNeededForNextLevel();
-    }
-
-    private static long progressionSum(long n, long first, long step) {
-        return n * (2L * first + (n - 1L) * step) / 2L;
-    }
-
-    private static long saturatedAdd(long a, long b) {
-        long sum = a + b;
-        // Overflow only when both operands share a sign that the result does not.
-        if (((a ^ sum) & (b ^ sum)) < 0L) return a > 0L ? Long.MAX_VALUE : Long.MIN_VALUE;
-        return sum;
-    }
 
     // ── Deposit ─────────────────────────────────────────────────────────────
 
@@ -952,18 +528,7 @@ public final class XpVessel {
             return room;
         }
 
-        long available;
-        if (storeUntilPreviousLevel) {
-            long xpForCurrentLevel = experienceForLevel(player.experienceLevel);
-            available = playerTotalXp(player) - xpForCurrentLevel;
-
-            // Player sits on exactly N > 0 levels (the bar looks empty): take the level below.
-            if (available <= 0L && player.experienceLevel > 0) {
-                available = xpForCurrentLevel - experienceForLevel(player.experienceLevel - 1);
-            }
-        } else {
-            available = playerTotalXp(player);
-        }
+        long available = availableToStore(player, storeUntilPreviousLevel);
         if (available <= 0L) return 0;
 
         int wanted = (int) Math.min(room, available);
@@ -973,11 +538,7 @@ public final class XpVessel {
         // a cancellable PlayerXpEvent.XpChange, and its float peel loop is not exact either.
         // Measured unfloored and then floored once, so the bottle can never be credited with more
         // than the player actually lost (that direction would be a slow XP printer).
-        double before = playerTotalXpExact(player);
-        player.giveExperiencePoints(-wanted);
-        long moved = (long) Math.floor(before - playerTotalXpExact(player) + ROUNDING_EPSILON);
-        moved = Math.max(0L, Math.min(moved, wanted));
-        reconcilePlayerXp(player);
+        long moved = takeFromPlayer(player, wanted);
         if (moved <= 0L) return 0;
 
         setStoredXp(stack, stored + (int) moved);

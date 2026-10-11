@@ -1,9 +1,7 @@
 package com.temog.notminelegacy.whatremains.client;
 
-import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemains;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
-import com.temog.notminelegacy.whatremains.compat.dnl.DnlGreatBottleBridge;
 import com.temog.notminelegacy.whatremains.registry.WREntities;
 import com.temog.notminelegacy.whatremains.registry.WRItems;
 import com.temog.notminelegacy.whatremains.registry.WRMenus;
@@ -14,7 +12,6 @@ import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
-import net.minecraft.world.item.Item;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
@@ -22,7 +19,6 @@ import net.minecraftforge.client.event.RegisterItemDecorationsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * Registers client-side renderers and item model predicates for What Remains.
@@ -78,20 +74,6 @@ public final class WRClientSetup {
                         : 0.0F
             );
 
-            // XPB-04: same fill-stage predicate, registered against DNL's own Great Bottle item —
-            // resolved by registry lookup, a null result (DNL absent) simply skips registration.
-            Item greatBottle = ForgeRegistries.ITEMS.getValue(
-                    new ResourceLocation("dungeonnowloading", "great_experience_bottle"));
-            if (greatBottle != null) {
-                ItemProperties.register(
-                    greatBottle,
-                    new ResourceLocation(WhatRemains.MODID, "xp_fill"),
-                    (stack, level, entity, seed) ->
-                        (DnlGreatBottleBridge.isActive() && GreatBottleConfig.greatBottleStagedTextures)
-                            ? XpVessel.fillFraction(stack)
-                            : 0.0F
-                );
-            }
         });
     }
 
@@ -105,18 +87,10 @@ public final class WRClientSetup {
      * <p>
      * The gate itself lives in {@link XpBottleCountBadge#render} (re-checked every frame, not just
      * here at registration), so this method only wires the decorator up.
-     * <p>
-     * XPB-03: also registers against DungeonNowLoading's Great Bottle item, resolved by registry
-     * lookup — a null result (DNL absent) is simply skipped, no DNL class reference needed here.
-     */
+         */
     @SubscribeEvent
     public static void registerItemDecorations(RegisterItemDecorationsEvent event) {
         event.register(WRItems.XP_BOTTLE.get(), new XpBottleCountBadge());
-
-        Item greatBottle = ForgeRegistries.ITEMS.getValue(
-                new ResourceLocation("dungeonnowloading", "great_experience_bottle"));
-        if (greatBottle != null) {
-            event.register(greatBottle, new XpBottleCountBadge());
-        }
+    }
     }
 }

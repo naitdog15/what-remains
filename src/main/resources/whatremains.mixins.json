@@ -8,9 +8,7 @@
   "priority": 1000,
   "mixins": [
     "ItemBarMixin",
-    "ThrownExperienceBottleMixin",
-    "compat.dnl.DnlGreatBottleItemMixin",
-    "compat.dnl.DnlGreatBottleEntityMixin"
+    "ThrownExperienceBottleMixin"
   ],
   "client": [],
   "injectors": {

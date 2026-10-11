@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.network;
 
+import com.temog.notminelegacy.xp.XpMath;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -231,7 +232,7 @@ public final class ServerboundXpBottleGesture {
         boolean creative = player.getAbilities().instabuild;
 
         // Refuse before touching anything. A rejected gesture must leave the inventory bit-identical.
-        if (!creative && XpVessel.playerTotalXp(player) <= 0L) {
+        if (!creative && XpMath.playerTotalXp(player) <= 0L) {
             reject(player);
             return false;
         }

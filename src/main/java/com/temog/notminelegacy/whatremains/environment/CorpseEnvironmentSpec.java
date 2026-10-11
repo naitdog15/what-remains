@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.environment;
 
+import com.temog.notminelegacy.environment.EnvironmentSample;
 import javax.annotation.Nullable;
 
 import net.minecraft.tags.TagKey;
@@ -89,7 +90,7 @@ public final class CorpseEnvironmentSpec {
     }
 
     /** True when every AND-combined condition field currently holds against the given sample. */
-    public boolean matches(CorpseEnvironment env) {
+    public boolean matches(EnvironmentSample env) {
         return condition.matches(env);
     }
 
@@ -147,7 +148,7 @@ public final class CorpseEnvironmentSpec {
             this.requireOnFire = requireOnFire;
         }
 
-        public boolean matches(CorpseEnvironment env) {
+        public boolean matches(EnvironmentSample env) {
             if (fluid != null) {
                 boolean fluidPresent = switch (fluid) {
                     case "lava" -> env.inLava();

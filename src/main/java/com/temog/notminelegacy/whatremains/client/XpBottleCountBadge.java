@@ -1,10 +1,8 @@
 package com.temog.notminelegacy.whatremains.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.temog.notminelegacy.whatremains.GreatBottleConfig;
 import com.temog.notminelegacy.whatremains.WhatRemains;
 import com.temog.notminelegacy.whatremains.WhatRemainsConfig;
-import com.temog.notminelegacy.whatremains.compat.dnl.DnlGreatBottleBridge;
 import com.temog.notminelegacy.whatremains.xp.XpVessel;
 
 import net.minecraft.client.Minecraft;
@@ -69,10 +67,7 @@ public final class XpBottleCountBadge implements IItemDecorator {
         // Checked at RENDER time, not only at registration, so a config reload (or the master switch)
         // takes effect immediately, and a pre-bake state fails closed to plain vanilla rendering.
         // Dispatch by item: each vessel keeps its own independent gate.
-        boolean isGreat = XpVessel.isGreatBottle(stack);
-        boolean active = isGreat
-                ? DnlGreatBottleBridge.isActive() && GreatBottleConfig.greatBottleCountBadge
-                : XpVessel.enabled() && WhatRemainsConfig.xpBottleCountBadge;
+        boolean active = XpVessel.enabled() && WhatRemainsConfig.xpBottleCountBadge;
         if (!active) return false;
 
         if (XpVessel.getStoredXp(stack) <= 0) return false; // untagged/empty bottles must look exactly vanilla; bottles below level 1 still show "0"
@@ -81,7 +76,7 @@ public final class XpBottleCountBadge implements IItemDecorator {
         // when the marginal gate is on, shows what THIS viewer would actually gain right now —
         // always <= the intrinsic figure (XpVessel#marginalLevelsFor's own guarantee).
         int level = XpVessel.storedLevel(stack);
-        boolean marginal = isGreat ? GreatBottleConfig.greatBottleCountBadgeMarginal : WhatRemainsConfig.xpBottleCountBadgeMarginal;
+        boolean marginal = WhatRemainsConfig.xpBottleCountBadgeMarginal;
         if (marginal) {
             LocalPlayer viewer = Minecraft.getInstance().player;
             if (viewer != null) level = XpVessel.marginalLevelsFor(viewer, stack);

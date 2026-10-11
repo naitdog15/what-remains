@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.client;
 
+import com.temog.notminelegacy.xp.XpMath;
 import com.temog.notminelegacy.compat.ModCompat;
 import com.temog.notminelegacy.whatremains.compat.WRCuriosCompat;
 import com.temog.notminelegacy.whatremains.entity.CorpseEntity;
@@ -527,7 +528,7 @@ public class CorpseMenuScreen extends AbstractContainerScreen<CorpseMenu> {
         int stored = corpse.getStoredXp();
         if (stored <= 0) return;
 
-        XpVessel.LevelAndProgress lp = XpVessel.levelAndProgressForExperience(stored);
+        XpMath.LevelAndProgress lp = XpMath.levelAndProgressForExperience(stored);
 
         // Reserve enough width for a 2-digit level so the bar's own position
         // stays fixed regardless of the actual level's digit count.

@@ -1,5 +1,6 @@
 package com.temog.notminelegacy.whatremains.environment;
 
+import com.temog.notminelegacy.environment.EnvironmentSample;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -109,7 +110,7 @@ public class CorpseEnvironmentLoader extends SimpleJsonResourceReloadListener {
      * clearing it — a one-way tracker's chosen style must survive the corpse later leaving the
      * environment that produced it, exactly as the numeric level itself never resets either.
      */
-    public static String resolveStyleKey(String tracker, CorpseEnvironment env) {
+    public static String resolveStyleKey(String tracker, EnvironmentSample env) {
         String bestStyle = "";
         int bestPriority = Integer.MIN_VALUE;
         for (CorpseEnvironmentSpec spec : SPECS) {
