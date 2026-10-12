@@ -92,5 +92,4 @@ public final class WRClientSetup {
     public static void registerItemDecorations(RegisterItemDecorationsEvent event) {
         event.register(WRItems.XP_BOTTLE.get(), new XpBottleCountBadge());
     }
-    }
 }

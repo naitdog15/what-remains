@@ -98,6 +98,9 @@ import net.minecraftforge.registries.ForgeRegistries;
  */
 public final class XpVessel {
 
+    /** Empty chunk partition; XpMath keeps its copy private, so the vessel holds its own. */
+    private static final int[] NO_CHUNKS = new int[0];
+
     private XpVessel() {}
 
     /**
